@@ -1,3 +1,4 @@
+// src/screens/Login.js
 import React, { useState } from 'react';
 import {
   View,
@@ -5,7 +6,8 @@ import {
   TouchableOpacity,
   Text,
   StyleSheet,
-  StatusBar
+  StatusBar,
+  Alert
 } from 'react-native';
 import {
   signInWithEmailAndPassword,
@@ -31,21 +33,29 @@ export default function Login({ navigation }) {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
+
       if (!user.emailVerified) {
         await signOut(auth);
-        // Mensaje en español para verificación
         Alert.alert(
           'Verificación requerida',
           'Antes de iniciar sesión, por favor verifica tu correo electrónico.'
         );
         return;
       }
+
+      // Navegamos a "Welcome", pasando nombre y tipo de cuenta
       navigation.reset({
         index: 0,
-        routes: [{ name: 'Welcome', params: { name: user.displayName } }],
+        routes: [{
+          name: 'Welcome',
+          params: {
+            name: user.displayName ?? '',
+            mode  // 'usuario' o 'empresa'
+          }
+        }],
       });
     } catch (error) {
-      console.error(error);
+      console.error('Login error:', error);
       setErrorMsg('Usuario o contraseña incorrecto');
     }
   };
@@ -54,11 +64,15 @@ export default function Login({ navigation }) {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <Text style={styles.header}>Iniciar Sesión</Text>
+
+      {/* Selector de Usuario / Empresa */}
       <UserCompanySelector selected={mode} onSelect={setMode} />
+
       <TextInput
         placeholder="Correo electrónico"
         style={styles.input}
         keyboardType="email-address"
+        autoCapitalize="none"
         value={email}
         onChangeText={setEmail}
       />
@@ -70,9 +84,11 @@ export default function Login({ navigation }) {
         onChangeText={setPassword}
       />
       {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
+
       <TouchableOpacity style={styles.button} onPress={handleLogin}>
         <Text style={styles.buttonText}>Entrar</Text>
       </TouchableOpacity>
+
       <TouchableOpacity onPress={() => navigation.navigate('Register')}>
         <Text style={styles.link}>¿No tienes cuenta? Regístrate</Text>
       </TouchableOpacity>

@@ -1,3 +1,4 @@
+// src/screens/Register.js
 import React, { useState } from 'react';
 import {
   View,
@@ -13,7 +14,8 @@ import {
   sendEmailVerification,
   updateProfile
 } from 'firebase/auth';
-import { auth } from '../firebase/config';
+import { auth, db } from '../firebase/config';
+import { doc, setDoc } from 'firebase/firestore';
 import colors from '../theme/colors';
 import typography from '../theme/typography';
 import UserCompanySelector from '../components/UserCompanySelector';
@@ -25,22 +27,36 @@ export default function Register({ navigation }) {
   const [password, setPassword] = useState('');
 
   const handleRegister = async () => {
-    if (!name || !email || !password) {
+    if (!name.trim() || !email.trim() || !password.trim()) {
       Alert.alert('Error', 'Rellena todos los campos');
       return;
     }
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-      await updateProfile(user, { displayName: name });
+      // 1. Crear cuenta en Auth
+      const { user } = await createUserWithEmailAndPassword(auth, email, password);
+
+      // 2. Poner displayName
+      await updateProfile(user, { displayName: name.trim() });
+
+      // 3. Si es empresa, crear doc bajo "empresas/{uid}"
+      if (mode === 'empresa') {
+        await setDoc(doc(db, 'empresas', user.uid), {
+          name: name.trim(),
+          email: email.trim(),
+          type: 'empresa'
+        });
+      }
+
+      // 4. Enviar correo de verificación
       await sendEmailVerification(user);
+
       Alert.alert(
         '¡Cuenta creada!',
-        'Te hemos enviado un correo de verificación. Por favor, verifica tu correo electrónico antes de iniciar sesión.',
+        'Revisa tu correo para verificar la cuenta.',
         [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
       );
     } catch (error) {
-      console.error(error);
+      console.error('Error al registrar:', error);
       Alert.alert('Error al registrar', error.message);
     }
   };
@@ -49,7 +65,9 @@ export default function Register({ navigation }) {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <Text style={styles.header}>Registro</Text>
+
       <UserCompanySelector selected={mode} onSelect={setMode} />
+
       <TextInput
         placeholder={mode === 'usuario' ? 'Nombre de usuario' : 'Nombre de empresa'}
         style={styles.input}
@@ -60,6 +78,7 @@ export default function Register({ navigation }) {
         placeholder="Correo electrónico"
         style={styles.input}
         keyboardType="email-address"
+        autoCapitalize="none"
         value={email}
         onChangeText={setEmail}
       />
@@ -70,6 +89,7 @@ export default function Register({ navigation }) {
         value={password}
         onChangeText={setPassword}
       />
+
       <TouchableOpacity style={styles.button} onPress={handleRegister}>
         <Text style={styles.buttonText}>Registrar</Text>
       </TouchableOpacity>
