@@ -16,7 +16,7 @@ import colors from '../theme/colors';
 import typography from '../theme/typography';
 
 export default function Welcome({ route, navigation }) {
-  const { name, mode } = route.params; // mode: 'usuario' o 'empresa'
+  const { name, mode } = route.params; // 'usuario' o 'empresa'
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(mode === 'usuario');
 
@@ -25,9 +25,11 @@ export default function Welcome({ route, navigation }) {
       (async () => {
         setLoading(true);
         try {
-          // Carga todas las empresas desde la colección raíz "empresas"
           const snap = await getDocs(collection(db, 'empresas'));
-          setCompanies(snap.docs.map(d => ({ id: d.id, name: d.data().name })));
+          setCompanies(snap.docs.map(d => ({
+            id: d.id,
+            name: d.data().name
+          })));
         } catch (e) {
           console.error('Error cargando empresas:', e);
         } finally {
@@ -64,7 +66,16 @@ export default function Welcome({ route, navigation }) {
         </>
       ) : (
         <>
-          <Text style={styles.header}>Bienvenido {name}</Text>
+          <View style={styles.topRow}>
+            <Text style={styles.header}>Bienvenido {name}</Text>
+            <TouchableOpacity
+              style={styles.resBtn}
+              onPress={() => navigation.navigate('MyReservations')}
+            >
+              <Text style={styles.resText}>Mis Reservas</Text>
+            </TouchableOpacity>
+          </View>
+
           {loading ? (
             <ActivityIndicator size="large" color={colors.primary} />
           ) : companies.length === 0 ? (
@@ -100,7 +111,10 @@ export default function Welcome({ route, navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex:1, backgroundColor: colors.background, padding:20 },
-  header: { ...typography.h1, color: colors.textPrimary, textAlign:'center', marginBottom:20 },
+  topRow: { flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
+  header: { ...typography.h1, color: colors.textPrimary, marginBottom:20 },
+  resBtn: { padding:6, backgroundColor: colors.primary, borderRadius:6 },
+  resText: { color: colors.buttonText, ...typography.body, fontWeight:'600' },
   button: {
     width:'80%', backgroundColor:colors.primary, padding:14,
     borderRadius:25, alignItems:'center', marginVertical:10, alignSelf:'center'

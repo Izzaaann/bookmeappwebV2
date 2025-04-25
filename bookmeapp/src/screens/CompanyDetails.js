@@ -21,8 +21,10 @@ export default function CompanyDetails({ route, navigation }) {
   useEffect(() => {
     (async () => {
       try {
-        // Lee servicios desde empresas/{companyId}/servicios
-        const snap = await getDocs(collection(db, 'empresas', companyId, 'servicios'));
+        // Carga los servicios de esta empresa
+        const snap = await getDocs(
+          collection(db, 'empresas', companyId, 'servicios')
+        );
         setServices(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       } catch (e) {
         console.error('Error cargando servicios:', e);
@@ -46,15 +48,19 @@ export default function CompanyDetails({ route, navigation }) {
       <FlatList
         data={services}
         keyExtractor={item => item.id}
-        ListEmptyComponent={<Text style={styles.emptyText}>No hay servicios.</Text>}
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>No hay servicios.</Text>
+        }
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.card}
             onPress={() =>
               navigation.navigate('ServiceDetails', {
                 companyId,
+                // pasamos serviceId y todo lo que necesitemos
                 serviceId: item.id,
                 serviceName: item.serviceName,
+                price: item.price,
                 availability: item.availability
               })
             }
@@ -69,14 +75,11 @@ export default function CompanyDetails({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  center: { flex:1, justifyContent:'center', alignItems:'center', backgroundColor: colors.background },
-  container: { flex:1, backgroundColor: colors.background, padding:20 },
-  header: { ...typography.h1, textAlign:'center', marginBottom:20, color: colors.textPrimary },
-  emptyText: { ...typography.body, textAlign:'center', color: colors.textPrimary, marginTop:40 },
-  card: {
-    backgroundColor:colors.white, padding:16, borderRadius:8,
-    marginBottom:12, borderWidth:1, borderColor:colors.primary
-  },
-  serviceName: { ...typography.h2, color: colors.textPrimary },
-  price: { ...typography.body, color: colors.textPrimary, marginTop:4 }
+  center:   { flex:1, justifyContent:'center', alignItems:'center', backgroundColor: colors.background },
+  container:{ flex:1, backgroundColor: colors.background, padding:20 },
+  header:   { ...typography.h1, textAlign:'center', marginBottom:20, color: colors.textPrimary },
+  emptyText:{ ...typography.body, textAlign:'center', marginTop:40, color: colors.textPrimary },
+  card:     { backgroundColor:colors.white, padding:16, borderRadius:8, marginBottom:12, borderWidth:1, borderColor:colors.primary },
+  serviceName:{ ...typography.h2, color: colors.textPrimary },
+  price:      { ...typography.body, color: colors.textPrimary, marginTop:4 }
 });
