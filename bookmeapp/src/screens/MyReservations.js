@@ -23,56 +23,67 @@ import typography from '../theme/typography';
 
 export default function MyReservations() {
   const userId = auth.currentUser.uid;
-  const [reservas, setReservas] = useState([]);
+  const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     setLoading(true);
     const snap = await getDocs(collection(db, 'users', userId, 'reservations'));
-    setReservas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    setReservations(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
-  const handleCancel = async (res) => {
+  const handleCancel = (res) => {
     Alert.alert(
       'Cancelar reserva',
-      `¿Seguro que quieres cancelar ${res.slot.date} ${res.slot.from}-${res.slot.to}?`,
+      `¿Seguro que quieres cancelar ${res.serviceName} el ${res.slot.date} de ${res.slot.from} a ${res.slot.to}?`,
       [
-        { text:'No', style:'cancel' },
-        { text:'Sí', onPress: async () => {
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Sí',
+          onPress: async () => {
             try {
               // 1) Eliminar reserva usuario
               await deleteDoc(doc(db, 'users', userId, 'reservations', res.id));
+
               // 2) Eliminar reserva empresa
-              //   (buscamos doc con misma createdAt en usuarios/{company}/reservations)
-              const compResSnap = await getDocs(
-                collection(db, 'users', res.companyId, 'reservations')
+              const compSnap = await getDocs(
+                collection(db, 'empresas', res.companyId, 'reservations')
               );
-              compResSnap.docs.forEach(async d => {
+              for (const d of compSnap.docs) {
                 const data = d.data();
-                if (data.userId === userId &&
-                    data.serviceId === res.serviceId &&
-                    data.slot.date === res.slot.date &&
-                    data.slot.from === res.slot.from) {
-                  await deleteDoc(doc(db,'users',res.companyId,'reservations',d.id));
+                if (
+                  data.userId === userId &&
+                  data.serviceId === res.serviceId &&
+                  data.slot.date === res.slot.date &&
+                  data.slot.from === res.slot.from
+                ) {
+                  await deleteDoc(
+                    doc(db, 'empresas', res.companyId, 'reservations', d.id)
+                  );
                 }
-              });
+              }
 
               // 3) Volver a añadir franja a disponibilidad
-              const serviceDoc = doc(db,'users',res.companyId,'services',res.serviceId);
-              await updateDoc(serviceDoc, {
-                availability: arrayUnion(res.slot)
-              });
+              await updateDoc(
+                doc(db, 'empresas', res.companyId, 'servicios', res.serviceId),
+                {
+                  availability: arrayUnion(res.slot)
+                }
+              );
 
               Alert.alert('Reserva cancelada');
               load();
-            } catch(e) {
-              console.error(e);
-              Alert.alert('Error','No se pudo cancelar');
+            } catch (e) {
+              console.error('Error cancelando reserva:', e);
+              Alert.alert('Error', 'No se pudo cancelar la reserva.');
             }
-          }}
+          }
+        }
       ]
     );
   };
@@ -89,17 +100,14 @@ export default function MyReservations() {
     <View style={styles.container}>
       <Text style={styles.header}>Mis Reservas</Text>
       <FlatList
-        data={reservas}
-        keyExtractor={i => i.id}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>No tienes reservas.</Text>
-        }
+        data={reservations}
+        keyExtractor={item => item.id}
+        ListEmptyComponent={<Text style={styles.emptyText}>No tienes reservas.</Text>}
         renderItem={({ item }) => (
           <View style={styles.card}>
             <Text style={styles.serviceName}>{item.serviceName}</Text>
-            <Text style={styles.slotText}>
-              {item.slot.date} {item.slot.from}-{item.slot.to}
-            </Text>
+            <Text style={styles.slotText}>📅 {item.slot.date}</Text>
+            <Text style={styles.slotText}>⏰ {item.slot.from} – {item.slot.to}</Text>
             <TouchableOpacity
               style={styles.cancelBtn}
               onPress={() => handleCancel(item)}
@@ -151,14 +159,15 @@ const styles = StyleSheet.create({
   },
   slotText: {
     ...typography.body,
-    marginVertical:8,
+    marginVertical:4,
     color: colors.textPrimary
   },
   cancelBtn: {
-    alignSelf:'flex-end'
+    alignSelf:'flex-end',
+    marginTop:8
   },
   cancelText: {
-    color:'red',
+    color: 'red',
     ...typography.body,
     fontWeight:'600'
   }
