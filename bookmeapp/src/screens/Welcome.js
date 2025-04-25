@@ -7,37 +7,39 @@ import {
   StyleSheet,
   StatusBar,
   FlatList,
-  ActivityIndicator
+  ActivityIndicator,
+  Image
 } from 'react-native';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase/config';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import colors from '../theme/colors';
 import typography from '../theme/typography';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function Welcome({ route, navigation }) {
-  const { name, mode } = route.params; // 'usuario' o 'empresa'
+  const { mode } = route.params;
+  const [userData, setUserData] = useState({ name: '', photoURL: null });
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(mode === 'usuario');
 
   useEffect(() => {
-    if (mode === 'usuario') {
-      (async () => {
+    (async () => {
+      const uid = auth.currentUser.uid;
+      const col = mode === 'empresa' ? 'empresas' : 'users';
+      const snap = await getDoc(doc(db, col, uid));
+      if (snap.exists()) {
+        const d = snap.data();
+        setUserData({ name: d.name || '', photoURL: d.photoURL || null });
+      }
+      if (mode === 'usuario') {
         setLoading(true);
-        try {
-          const snap = await getDocs(collection(db, 'empresas'));
-          setCompanies(snap.docs.map(d => ({
-            id: d.id,
-            name: d.data().name
-          })));
-        } catch (e) {
-          console.error('Error cargando empresas:', e);
-        } finally {
-          setLoading(false);
-        }
-      })();
-    }
-  }, [mode]);
+        const snap2 = await getDocs(collection(db, 'empresas'));
+        setCompanies(snap2.docs.map(d => ({ id: d.id, name: d.data().name })));
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -46,63 +48,64 @@ export default function Welcome({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
+
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.navigate('Profile', { mode })}>
+          {userData.photoURL ? (
+            <Image source={{ uri: userData.photoURL }} style={styles.avatar} />
+          ) : (
+            <Ionicons name="person-circle" size={36} color={colors.white} />
+          )}
+        </TouchableOpacity>
+        <Text style={styles.title}>
+          Bienvenido{''}<Text style={styles.name}>{userData.name}</Text>
+        </Text>
+        {mode === 'usuario' && (
+          <TouchableOpacity onPress={() => navigation.navigate('MyReservations')}>
+            <Ionicons name="calendar-outline" size={28} color={colors.white} />
+          </TouchableOpacity>
+        )}
+      </View>
 
       {mode === 'empresa' ? (
-        <>
-          <Text style={styles.header}>Panel de Empresa</Text>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => navigation.navigate('AddEvent')}
-          >
-            <Text style={styles.buttonText}>Añadir Evento</Text>
+        <View style={styles.empresaMenu}>
+          <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('AddEvent')}>
+            <Text style={styles.btnText}>Añadir Evento</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.button}>
-            <Text style={styles.buttonText}>Modificar Evento</Text>
+          <TouchableOpacity style={styles.btn}>
+            <Text style={styles.btnText}>Modificar Evento</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.button}>
-            <Text style={styles.buttonText}>Eliminar Evento</Text>
+          <TouchableOpacity style={styles.btn}>
+            <Text style={styles.btnText}>Eliminar Evento</Text>
           </TouchableOpacity>
-        </>
+        </View>
+      ) : loading ? (
+        <ActivityIndicator style={{ marginTop: 40 }} size="large" color={colors.primary} />
+      ) : companies.length === 0 ? (
+        <Text style={styles.emptyText}>No hay empresas disponibles.</Text>
       ) : (
-        <>
-          <View style={styles.topRow}>
-            <Text style={styles.header}>Bienvenido {name}</Text>
+        <FlatList
+          data={companies}
+          keyExtractor={i => i.id}
+          contentContainerStyle={{ paddingTop: 20 }}
+          renderItem={({ item }) => (
             <TouchableOpacity
-              style={styles.resBtn}
-              onPress={() => navigation.navigate('MyReservations')}
+              style={styles.card}
+              onPress={() =>
+                navigation.navigate('CompanyDetails', {
+                  companyId: item.id,
+                  companyName: item.name
+                })
+              }
             >
-              <Text style={styles.resText}>Mis Reservas</Text>
+              <Text style={styles.companyName}>{item.name}</Text>
             </TouchableOpacity>
-          </View>
-
-          {loading ? (
-            <ActivityIndicator size="large" color={colors.primary} />
-          ) : companies.length === 0 ? (
-            <Text style={styles.emptyText}>No hay empresas disponibles.</Text>
-          ) : (
-            <FlatList
-              data={companies}
-              keyExtractor={item => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.card}
-                  onPress={() =>
-                    navigation.navigate('CompanyDetails', {
-                      companyId: item.id,
-                      companyName: item.name
-                    })
-                  }
-                >
-                  <Text style={styles.companyName}>{item.name}</Text>
-                </TouchableOpacity>
-              )}
-            />
           )}
-        </>
+        />
       )}
 
-      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+      <TouchableOpacity style={styles.logout} onPress={handleLogout}>
         <Text style={styles.logoutText}>Cerrar Sesión</Text>
       </TouchableOpacity>
     </View>
@@ -110,22 +113,43 @@ export default function Welcome({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex:1, backgroundColor: colors.background, padding:20 },
-  topRow: { flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
-  header: { ...typography.h1, color: colors.textPrimary, marginBottom:20 },
-  resBtn: { padding:6, backgroundColor: colors.primary, borderRadius:6 },
-  resText: { color: colors.buttonText, ...typography.body, fontWeight:'600' },
-  button: {
-    width:'80%', backgroundColor:colors.primary, padding:14,
-    borderRadius:25, alignItems:'center', marginVertical:10, alignSelf:'center'
+  container: { flex: 1, backgroundColor: colors.background },
+  header: {
+    backgroundColor: colors.primary,
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
   },
-  buttonText: { color: colors.buttonText, ...typography.body, fontWeight:'600' },
-  emptyText: { ...typography.body, color: colors.textPrimary, textAlign:'center', marginTop:40 },
+  avatar: { width: 36, height: 36, borderRadius: 18 },
+  title: { color: colors.white, fontSize: 20 },
+  name: { fontSize: 24, fontWeight: '700' },
+  empresaMenu: { marginTop: 40, alignItems: 'center' },
+  btn: {
+    width: '80%',
+    backgroundColor: colors.white,
+    padding: 14,
+    borderRadius: 30,
+    marginVertical: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5
+  },
+  btnText: { color: colors.primary, fontSize: 16, fontWeight: '600' },
   card: {
-    backgroundColor:colors.white, padding:16, borderRadius:8,
-    marginBottom:12, borderWidth:1, borderColor:colors.primary
+    backgroundColor: colors.white,
+    marginHorizontal: 20,
+    marginVertical: 8,
+    padding: 16,
+    borderRadius: 12,
+    elevation: 3
   },
-  companyName: { ...typography.h2, color: colors.textPrimary },
-  logoutBtn: { marginTop:20, alignSelf:'center' },
-  logoutText: { color: colors.primary, ...typography.body, fontWeight:'600' }
+  companyName: { fontSize: 18, fontWeight: '600', color: colors.textPrimary },
+  emptyText: { textAlign: 'center', marginTop: 40, color: colors.textSecondary },
+  logout: { alignSelf: 'center', marginVertical: 20 },
+  logoutText: { color: colors.primary, fontSize: 16, fontWeight: '600' }
 });
