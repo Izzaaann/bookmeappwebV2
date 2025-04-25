@@ -1,3 +1,5 @@
+// src/screens/Profile.js
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -14,24 +16,37 @@ import { updateProfile } from 'firebase/auth';
 import colors from '../theme/colors';
 import typography from '../theme/typography';
 
+/**
+ * Pantalla de perfil de usuario/empresa.
+ * Permite cambiar el nombre o la contraseña según el modo.
+ *
+ * Props recibidas vía React Navigation:
+ *  - route.params.mode → 'usuario' o 'empresa'
+ *  - navigation       → objeto de navegación
+ */
 export default function Profile({ route, navigation }) {
-  const { mode } = route.params; // 'usuario' o 'empresa'
-  const uid = auth.currentUser.uid;
-  const col = mode === 'empresa' ? 'empresas' : 'users';
+  // Determinar si es perfil de usuario o de empresa
+  const { mode } = route.params;                 // 'usuario' | 'empresa'
+  const uid = auth.currentUser.uid;              // ID del usuario autenticado
+  const col = mode === 'empresa' ? 'empresas' : 'users';  // Colección Firestore a usar
 
-  const [loading, setLoading] = useState(true);
-  const [section, setSection] = useState('nombre'); // 'nombre' o 'password'
-  const [name, setName] = useState('');
-  const [newPass, setNewPass] = useState('');
+  // Estados locales
+  const [loading, setLoading] = useState(true);  // Indicador de carga general
+  const [section, setSection] = useState('nombre'); // Sección activa: 'nombre' o 'password'
+  const [name, setName] = useState('');           // Nombre a mostrar/editar
+  const [newPass, setNewPass] = useState('');     // Nueva contraseña a establecer
 
+  // Al montar: cargar perfil desde Firestore
   useEffect(() => {
     (async () => {
       try {
         const ref = doc(db, col, uid);
         const snap = await getDoc(ref);
         if (snap.exists()) {
+          // Si existe, obtenemos el campo 'name'
           setName(snap.data().name || '');
         } else {
+          // Si no existe doc, lo creamos con displayName de Auth
           const displayName = auth.currentUser.displayName || '';
           await setDoc(ref, { name: displayName });
           setName(displayName);
@@ -45,6 +60,9 @@ export default function Profile({ route, navigation }) {
     })();
   }, []);
 
+  /**
+   * saveName: actualiza el nombre en Firestore y en el perfil de Auth
+   */
   const saveName = async () => {
     if (!name.trim()) {
       Alert.alert('Error', 'El nombre no puede estar vacío.');
@@ -53,7 +71,9 @@ export default function Profile({ route, navigation }) {
     setLoading(true);
     try {
       const ref = doc(db, col, uid);
+      // 1) Guardar en Firestore
       await updateDoc(ref, { name: name.trim() });
+      // 2) Actualizar displayName en Firebase Auth
       await updateProfile(auth.currentUser, { displayName: name.trim() });
       Alert.alert('Éxito', 'Nombre actualizado correctamente.');
       navigation.goBack();
@@ -65,6 +85,9 @@ export default function Profile({ route, navigation }) {
     }
   };
 
+  /**
+   * savePassword: actualiza la contraseña del usuario en Auth
+   */
   const savePassword = async () => {
     if (newPass.length < 6) {
       Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres.');
@@ -72,6 +95,7 @@ export default function Profile({ route, navigation }) {
     }
     setLoading(true);
     try {
+      // Método propio de Firebase Auth para cambiar contraseña
       await auth.currentUser.updatePassword(newPass);
       Alert.alert('Éxito', 'Contraseña actualizada correctamente.');
       navigation.goBack();
@@ -83,6 +107,7 @@ export default function Profile({ route, navigation }) {
     }
   };
 
+  // Mientras carga datos, mostrar spinner
   if (loading) {
     return (
       <View style={styles.loader}>
@@ -95,6 +120,7 @@ export default function Profile({ route, navigation }) {
     <View style={styles.container}>
       <Text style={styles.title}>Mi Perfil</Text>
 
+      {/* Toggle para elegir sección: nombre o contraseña */}
       <View style={styles.toggleContainer}>
         <TouchableOpacity
           style={[styles.toggleBtn, section === 'nombre' && styles.activeToggle]}
@@ -114,6 +140,7 @@ export default function Profile({ route, navigation }) {
         </TouchableOpacity>
       </View>
 
+      {/* Formulario según sección activa */}
       {section === 'nombre' ? (
         <View style={styles.form}>
           <Text style={styles.label}>Nuevo Nombre</Text>
@@ -146,11 +173,30 @@ export default function Profile({ route, navigation }) {
   );
 }
 
+// Estilos del componente
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, padding: 20 },
-  loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
-  title: { ...typography.h1, color: colors.textPrimary, textAlign: 'center', marginBottom: 20 },
-  toggleContainer: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 },
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+    padding: 20
+  },
+  loader: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background
+  },
+  title: {
+    ...typography.h1,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: 20
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 20
+  },
   toggleBtn: {
     paddingVertical: 10,
     paddingHorizontal: 20,
@@ -159,11 +205,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary
   },
-  toggleText: { ...typography.body, color: colors.primary, fontWeight: '600' },
-  activeToggle: { backgroundColor: colors.primary },
-  activeText: { color: colors.buttonText },
-  form: { marginTop: 10 },
-  label: { ...typography.body, color: colors.textPrimary, marginBottom: 8 },
+  toggleText: {
+    ...typography.body,
+    color: colors.primary,
+    fontWeight: '600'
+  },
+  activeToggle: {
+    backgroundColor: colors.primary
+  },
+  activeText: {
+    color: colors.buttonText
+  },
+  form: {
+    marginTop: 10
+  },
+  label: {
+    ...typography.body,
+    color: colors.textPrimary,
+    marginBottom: 8
+  },
   input: {
     backgroundColor: colors.white,
     padding: 12,
@@ -172,6 +232,15 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     marginBottom: 20
   },
-  saveBtn: { backgroundColor: colors.primary, padding: 14, borderRadius: 25, alignItems: 'center' },
-  saveText: { color: colors.buttonText, ...typography.body, fontWeight: '600' }
+  saveBtn: {
+    backgroundColor: colors.primary,
+    padding: 14,
+    borderRadius: 25,
+    alignItems: 'center'
+  },
+  saveText: {
+    color: colors.buttonText,
+    ...typography.body,
+    fontWeight: '600'
+  }
 });
