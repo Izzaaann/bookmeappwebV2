@@ -2,160 +2,207 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ActivityIndicator
+  View, Text, TextInput, TouchableOpacity,
+  StyleSheet, Alert, ActivityIndicator, ScrollView
 } from 'react-native';
 import { auth, db } from '../firebase/config';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { updateProfile } from 'firebase/auth';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { updateProfile, updateEmail } from 'firebase/auth';
 import colors from '../theme/colors';
 import typography from '../theme/typography';
 
-/**
- * Pantalla de perfil de usuario/empresa.
- * Permite cambiar el nombre o la contraseña según el modo.
- *
- * Props recibidas vía React Navigation:
- *  - route.params.mode → 'usuario' o 'empresa'
- *  - navigation       → objeto de navegación
- */
 export default function Profile({ route, navigation }) {
-  // Determinar si es perfil de usuario o de empresa
-  const { mode } = route.params;                 // 'usuario' | 'empresa'
-  const uid = auth.currentUser.uid;              // ID del usuario autenticado
-  const col = mode === 'empresa' ? 'empresas' : 'users';  // Colección Firestore a usar
+  const { mode } = route.params;                // 'usuario' | 'empresa'
+  const uid = auth.currentUser.uid;
+  const col = mode === 'empresa' ? 'business' : 'users';
 
-  // Estados locales
-  const [loading, setLoading] = useState(true);  // Indicador de carga general
-  const [section, setSection] = useState('nombre'); // Sección activa: 'nombre' o 'password'
-  const [name, setName] = useState('');           // Nombre a mostrar/editar
-  const [newPass, setNewPass] = useState('');     // Nueva contraseña a establecer
+  const [loading, setLoading] = useState(true);
+  const [section, setSection] = useState('data');
 
-  // Al montar: cargar perfil desde Firestore
+  // comunes
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState(auth.currentUser.email);
+  const [phone, setPhone] = useState('');
+
+  // usuario
+  const [birthdate, setBirthdate] = useState('');
+
+  // empresa
+  const [address, setAddress] = useState('');
+  const [description, setDescription] = useState('');
+
+  const [newPass, setNewPass] = useState('');
+
   useEffect(() => {
     (async () => {
       try {
-        const ref = doc(db, col, uid);
-        const snap = await getDoc(ref);
+        const snap = await getDoc(doc(db, col, uid));
         if (snap.exists()) {
-          // Si existe, obtenemos el campo 'name'
-          setName(snap.data().name || '');
-        } else {
-          // Si no existe doc, lo creamos con displayName de Auth
-          const displayName = auth.currentUser.displayName || '';
-          await setDoc(ref, { name: displayName });
-          setName(displayName);
+          const d = snap.data();
+          if (mode === 'empresa') {
+            setName(d.businessName || '');
+            setPhone(d.phone || '');
+            setAddress(d.address || '');
+            setDescription(d.description || '');
+          } else {
+            setName(d.name || '');
+            setPhone(d.phone || '');
+            setBirthdate(d.birthdate || '');
+          }
         }
       } catch (e) {
-        console.error('Error al leer perfil:', e);
-        Alert.alert('Error', 'No se pudo cargar el perfil.');
+        console.error(e);
+        Alert.alert('Error', 'No se pudo cargar perfil.');
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  /**
-   * saveName: actualiza el nombre en Firestore y en el perfil de Auth
-   */
-  const saveName = async () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'El nombre no puede estar vacío.');
+  const saveData = async () => {
+    if (!name.trim() || !email.trim()) {
+      Alert.alert('Error', 'Nombre y correo obligatorios.');
       return;
     }
     setLoading(true);
     try {
       const ref = doc(db, col, uid);
-      // 1) Guardar en Firestore
-      await updateDoc(ref, { name: name.trim() });
-      // 2) Actualizar displayName en Firebase Auth
-      await updateProfile(auth.currentUser, { displayName: name.trim() });
-      Alert.alert('Éxito', 'Nombre actualizado correctamente.');
-      navigation.goBack();
+      const payload = {
+        email: email.trim(),
+        phone: phone.trim() || null
+      };
+      if (mode === 'empresa') {
+        payload.businessName = name.trim();
+        payload.address      = address.trim()      || null;
+        payload.description  = description.trim()  || null;
+      } else {
+        payload.name       = name.trim();
+        payload.birthdate  = birthdate.trim()     || null;
+      }
+      await updateDoc(ref, payload);
+
+      // auth
+      if (mode === 'empresa') {
+        await updateProfile(auth.currentUser, { displayName: name.trim() });
+      } else {
+        await updateProfile(auth.currentUser, { displayName: name.trim() });
+      }
+      if (auth.currentUser.email !== email.trim()) {
+        await updateEmail(auth.currentUser, email.trim());
+      }
+
+      Alert.alert('Éxito', 'Datos guardados.', [
+        { text:'OK', onPress:()=>navigation.goBack() }
+      ]);
     } catch (e) {
-      console.error('Error guardando nombre:', e);
-      Alert.alert('Error', 'No se pudo actualizar el nombre.');
+      console.error(e);
+      Alert.alert('Error', 'No se pudieron guardar los datos.');
     } finally {
       setLoading(false);
     }
   };
 
-  /**
-   * savePassword: actualiza la contraseña del usuario en Auth
-   */
   const savePassword = async () => {
     if (newPass.length < 6) {
-      Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres.');
+      Alert.alert('Error','Contraseña mínimo 6 caracteres.');
       return;
     }
     setLoading(true);
     try {
-      // Método propio de Firebase Auth para cambiar contraseña
       await auth.currentUser.updatePassword(newPass);
-      Alert.alert('Éxito', 'Contraseña actualizada correctamente.');
-      navigation.goBack();
+      Alert.alert('Éxito','Contraseña actualizada.',[
+        { text:'OK', onPress:()=>navigation.goBack() }
+      ]);
     } catch (e) {
-      console.error('Error cambiando contraseña:', e);
-      Alert.alert('Error', 'No se pudo actualizar la contraseña.');
+      console.error(e);
+      Alert.alert('Error','No se pudo actualizar contraseña.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Mientras carga datos, mostrar spinner
-  if (loading) {
-    return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+  if (loading) return (
+    <View style={styles.loader}>
+      <ActivityIndicator size="large" color={colors.primary}/>
+    </View>
+  );
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Mi Perfil</Text>
 
-      {/* Toggle para elegir sección: nombre o contraseña */}
       <View style={styles.toggleContainer}>
         <TouchableOpacity
-          style={[styles.toggleBtn, section === 'nombre' && styles.activeToggle]}
-          onPress={() => setSection('nombre')}
+          style={[styles.toggleBtn, section==='data' && styles.activeToggle]}
+          onPress={()=>setSection('data')}
         >
-          <Text style={[styles.toggleText, section === 'nombre' && styles.activeText]}>
-            Cambiar Nombre
-          </Text>
+          <Text style={[styles.toggleText, section==='data'&&styles.activeText]}>Datos</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.toggleBtn, section === 'password' && styles.activeToggle]}
-          onPress={() => setSection('password')}
+          style={[styles.toggleBtn, section==='password' && styles.activeToggle]}
+          onPress={()=>setSection('password')}
         >
-          <Text style={[styles.toggleText, section === 'password' && styles.activeText]}>
-            Cambiar Contraseña
-          </Text>
+          <Text style={[styles.toggleText, section==='password'&&styles.activeText]}>Contraseña</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Formulario según sección activa */}
-      {section === 'nombre' ? (
-        <View style={styles.form}>
-          <Text style={styles.label}>Nuevo Nombre</Text>
+      {section==='data' ? (
+        <>
+          <Text style={styles.label}>
+            {mode==='empresa' ? 'Nombre comercial' : 'Nombre'}
+          </Text>
+          <TextInput style={styles.input} value={name} onChangeText={setName}/>
+
+          <Text style={styles.label}>Correo electrónico</Text>
           <TextInput
             style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Introduce tu nombre"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={email}
+            onChangeText={setEmail}
           />
-          <TouchableOpacity style={styles.saveBtn} onPress={saveName}>
-            <Text style={styles.saveText}>Guardar Nombre</Text>
+
+          <Text style={styles.label}>Teléfono (opcional)</Text>
+          <TextInput
+            style={styles.input}
+            keyboardType="phone-pad"
+            value={phone}
+            onChangeText={setPhone}
+          />
+
+          {mode==='empresa' ? (
+            <>
+              <Text style={styles.label}>Dirección (opcional)</Text>
+              <TextInput
+                style={styles.input}
+                value={address}
+                onChangeText={setAddress}
+              />
+              <Text style={styles.label}>Descripción corta (opcional)</Text>
+              <TextInput
+                style={styles.input}
+                value={description}
+                onChangeText={setDescription}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.label}>Fecha nacimiento (opcional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="YYYY-MM-DD"
+                value={birthdate}
+                onChangeText={setBirthdate}
+              />
+            </>
+          )}
+
+          <TouchableOpacity style={styles.saveBtn} onPress={saveData}>
+            <Text style={styles.saveText}>Guardar Datos</Text>
           </TouchableOpacity>
-        </View>
+        </>
       ) : (
-        <View style={styles.form}>
+        <>
           <Text style={styles.label}>Nueva Contraseña</Text>
           <TextInput
             style={styles.input}
@@ -167,80 +214,38 @@ export default function Profile({ route, navigation }) {
           <TouchableOpacity style={styles.saveBtn} onPress={savePassword}>
             <Text style={styles.saveText}>Guardar Contraseña</Text>
           </TouchableOpacity>
-        </View>
+        </>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
-// Estilos del componente
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    padding: 20
-  },
-  loader: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.background
-  },
-  title: {
-    ...typography.h1,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 20
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 20
-  },
-  toggleBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.primary
-  },
-  toggleText: {
-    ...typography.body,
-    color: colors.primary,
-    fontWeight: '600'
-  },
-  activeToggle: {
-    backgroundColor: colors.primary
-  },
-  activeText: {
-    color: colors.buttonText
-  },
-  form: {
-    marginTop: 10
-  },
-  label: {
-    ...typography.body,
-    color: colors.textPrimary,
-    marginBottom: 8
-  },
-  input: {
-    backgroundColor: colors.white,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    marginBottom: 20
-  },
-  saveBtn: {
-    backgroundColor: colors.primary,
-    padding: 14,
-    borderRadius: 25,
-    alignItems: 'center'
-  },
-  saveText: {
-    color: colors.buttonText,
-    ...typography.body,
-    fontWeight: '600'
-  }
+  container:        { padding:20, backgroundColor:colors.background, flexGrow:1 },
+  loader:           { flex:1, justifyContent:'center', alignItems:'center' },
+  title:            { ...typography.h1, color:colors.textPrimary, textAlign:'center', marginBottom:20 },
+  toggleContainer:  { flexDirection:'row', justifyContent:'space-around', marginBottom:20 },
+  toggleBtn:        {
+                      paddingVertical:10,
+                      paddingHorizontal:20,
+                      borderRadius:20,
+                      backgroundColor:colors.white,
+                      borderWidth:1,
+                      borderColor:colors.primary
+                    },
+  toggleText:       { ...typography.body, color:colors.primary, fontWeight:'600' },
+  activeToggle:     { backgroundColor:colors.primary },
+  activeText:       { color:colors.buttonText },
+
+  label:            { ...typography.body, color:colors.textPrimary, marginBottom:6 },
+  input:            {
+                      backgroundColor:colors.white,
+                      padding:12,
+                      borderRadius:8,
+                      borderWidth:1,
+                      borderColor:colors.primary,
+                      marginBottom:16
+                    },
+  saveBtn:          { backgroundColor:colors.primary, padding:14, borderRadius:25, alignItems:'center', marginTop:10 },
+  saveText:         { ...typography.body, color:colors.buttonText, fontWeight:'600' }
 });
