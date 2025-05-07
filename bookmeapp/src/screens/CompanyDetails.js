@@ -15,48 +15,43 @@ import colors from '../theme/colors';
 import typography from '../theme/typography';
 
 /**
- * Componente que muestra la lista de servicios de una empresa.
+ * Lista de servicios de una empresa, mostrando nombre, descripción,
+ * duración y precio.
  *
  * Props recibidas vía React Navigation:
  *  - route.params.companyId   → ID de la empresa en Firestore.
- *  - route.params.companyName → Nombre de la empresa (para la cabecera).
- *  - navigation               → Objeto de navegación para pasar a ServiceDetails.
+ *  - route.params.companyName → Nombre de la empresa (cabecera).
+ *  - navigation               → Objeto de navegación.
  */
 export default function CompanyDetails({ route, navigation }) {
-  // Extraemos companyId y companyName de los parámetros de la ruta
   const { companyId, companyName } = route.params;
 
-  // Estado local para los servicios y control de carga
-  const [services, setServices] = useState([]);      // Array de servicios
-  const [loading, setLoading] = useState(true);      // Indica si aún carga datos
+  const [services, setServices] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // useEffect que se dispara al montar el componente o al cambiar companyId
   useEffect(() => {
     (async () => {
       try {
-        // 1) Creamos la referencia a la colección 'empresas/{companyId}/servicios'
-        // 2) Obtenemos todos los documentos (getDocs)
         const snap = await getDocs(
-          collection(db, 'empresas', companyId, 'servicios')
+          collection(db, 'business', companyId, 'services')
         );
-        // 3) Mapear cada documento a un objeto con id + data
         setServices(
           snap.docs.map(d => ({
             id: d.id,
-            ...d.data()
+            name: d.data().name,
+            description: d.data().description || '',
+            price: d.data().price,
+            duration: d.data().duration
           }))
         );
       } catch (e) {
-        // En caso de error, lo mostramos por consola
         console.error('Error cargando servicios:', e);
       } finally {
-        // Siempre desactivamos el indicador de carga
         setLoading(false);
       }
     })();
   }, [companyId]);
 
-  // Mientras loading sea true, mostramos un spinner de carga
   if (loading) {
     return (
       <View style={styles.center}>
@@ -65,17 +60,13 @@ export default function CompanyDetails({ route, navigation }) {
     );
   }
 
-  // Una vez cargados los servicios...
   return (
     <View style={styles.container}>
-      {/* Cabecera con el nombre de la empresa */}
       <Text style={styles.header}>{companyName}</Text>
 
-      {/* FlatList para renderizar cada servicio como tarjeta */}
       <FlatList
         data={services}
         keyExtractor={item => item.id}
-        // Si no hay servicios, mostramos un texto indicándolo
         ListEmptyComponent={
           <Text style={styles.emptyText}>No hay servicios.</Text>
         }
@@ -83,19 +74,27 @@ export default function CompanyDetails({ route, navigation }) {
           <TouchableOpacity
             style={styles.card}
             onPress={() =>
-              // Al pulsar, navegamos a la pantalla ServiceDetails
-              navigation.navigate('ServiceDetails', {
+              navigation.navigate('Booking', {
                 companyId,
                 serviceId: item.id,
-                serviceName: item.serviceName,
+                serviceName: item.name,
                 price: item.price,
-                availability: item.availability
+                duration: item.duration
               })
             }
           >
-            {/* Nombre y precio del servicio */}
-            <Text style={styles.serviceName}>{item.serviceName}</Text>
-            <Text style={styles.price}>€ {item.price}</Text>
+            <Text style={styles.serviceName}>{item.name}</Text>
+            {item.description ? (
+              <Text style={styles.description}>{item.description}</Text>
+            ) : null}
+            <View style={styles.row}>
+              <View style={styles.durationBox}>
+                <Text style={styles.durationText}>{item.duration} min</Text>
+              </View>
+              <View style={styles.priceBox}>
+                <Text style={styles.priceText}>€ {item.price}</Text>
+              </View>
+            </View>
           </TouchableOpacity>
         )}
       />
@@ -103,7 +102,6 @@ export default function CompanyDetails({ route, navigation }) {
   );
 }
 
-// Estilos con StyleSheet de React Native
 const styles = StyleSheet.create({
   center: {
     flex: 1,
@@ -138,11 +136,42 @@ const styles = StyleSheet.create({
   },
   serviceName: {
     ...typography.h2,
-    color: colors.textPrimary
+    color: colors.textPrimary,
+    marginBottom: 4
   },
-  price: {
+  description: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginBottom: 12
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  durationBox: {
+    flex: 1,
+    backgroundColor: colors.background,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: 'center',
+    marginRight: 8
+  },
+  durationText: {
     ...typography.body,
     color: colors.textPrimary,
-    marginTop: 4
+    fontWeight: '600'
+  },
+  priceBox: {
+    width: 80,
+    backgroundColor: colors.primary,
+    paddingVertical: 6,
+    borderRadius: 6,
+    alignItems: 'center'
+  },
+  priceText: {
+    ...typography.body,
+    color: colors.buttonText,
+    fontWeight: '600'
   }
 });
