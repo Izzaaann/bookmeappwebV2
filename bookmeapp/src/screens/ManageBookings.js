@@ -19,13 +19,13 @@ import colors from '../theme/colors';
 import typography from '../theme/typography';
 
 export default function ManageBookings() {
-  const uid = auth.currentUser.uid;
-  const bookingsRef = collection(db, 'business', uid, 'bookings');
+  const companyId = auth.currentUser.uid;
+  const bookingsRef = collection(db, 'business', companyId, 'bookings');
 
   const [loading, setLoading] = useState(true);
   const [bookings, setBookings] = useState([]);
 
-  const fetchBookings = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const snap = await getDocs(bookingsRef);
@@ -39,13 +39,13 @@ export default function ManageBookings() {
   }, []);
 
   useEffect(() => {
-    fetchBookings();
-  }, [fetchBookings]);
+    load();
+  }, [load]);
 
-  const confirmDelete = bookingId => {
+  const confirmDelete = booking => {
     Alert.alert(
       'Eliminar cita',
-      '¿Seguro que quieres eliminar esta cita?',
+      `¿Seguro que quieres eliminar la cita de ${booking.clientName} el ${booking.date.slice(0,10)} a las ${booking.date.slice(11,16)}?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -53,8 +53,15 @@ export default function ManageBookings() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteDoc(doc(db, 'business', uid, 'bookings', bookingId));
-              fetchBookings();
+              // 1) Borrar en business/{companyId}/bookings/{bookingId}
+              await deleteDoc(
+                doc(db, 'business', companyId, 'bookings', booking.id)
+              );
+              // 2) Borrar en users/{userId}/reservations/{bookingId}
+              await deleteDoc(
+                doc(db, 'users', booking.userId, 'reservations', booking.id)
+              );
+              load();
             } catch (e) {
               console.error(e);
               Alert.alert('Error', 'No se pudo eliminar la cita.');
@@ -90,18 +97,15 @@ export default function ManageBookings() {
         <View style={styles.card}>
           <View style={styles.info}>
             <Text style={styles.clientName}>{item.clientName}</Text>
-            <Text style={styles.line}>📧 {item.clientEmail}</Text>
-            <Text style={styles.line}>
-              📅 {item.date.slice(0, 10)} ⏰ {item.date.slice(11, 16)}
-            </Text>
+            <Text style={styles.line}>📅 {item.date.slice(0,10)}</Text>
+            <Text style={styles.line}>⏰ {item.date.slice(11,16)}</Text>
             <Text style={styles.line}>
               🏷️ {item.serviceName} — {item.duration} min — €{item.price}
             </Text>
-            <Text style={styles.status}>Estado: {item.status}</Text>
           </View>
           <TouchableOpacity
             style={styles.deleteBtn}
-            onPress={() => confirmDelete(item.id)}
+            onPress={() => confirmDelete(item)}
           >
             <Text style={styles.deleteText}>Eliminar</Text>
           </TouchableOpacity>
@@ -113,7 +117,7 @@ export default function ManageBookings() {
 
 const styles = StyleSheet.create({
   container:    { padding: 20, backgroundColor: colors.background },
-  center:       { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+  center:       { flex:1, justifyContent:'center', alignItems:'center', backgroundColor: colors.background },
   emptyText:    { ...typography.body, color: colors.textSecondary },
 
   card:         {
@@ -129,7 +133,6 @@ const styles = StyleSheet.create({
   info:         { flex: 1 },
   clientName:   { ...typography.h2, color: colors.textPrimary },
   line:         { ...typography.body, color: colors.textPrimary, marginTop: 4 },
-  status:       { ...typography.body, fontWeight: '600', marginTop: 8, color: colors.primary },
 
   deleteBtn:    {
                   paddingVertical: 6,

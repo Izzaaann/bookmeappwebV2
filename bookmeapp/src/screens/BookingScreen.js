@@ -1,5 +1,3 @@
-// src/screens/BookingScreen.js
-
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -8,71 +6,45 @@ import {
   FlatList,
   StyleSheet,
   Dimensions,
-  ActivityIndicator,
-  Alert
+  ActivityIndicator
 } from 'react-native';
-import { doc, getDoc, collection, getDocs, addDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import colors from '../theme/colors';
 import typography from '../theme/typography';
 
-// Días en español que coinciden con tus claves en Firestore
-const WEEK_DAYS = [
-  'Domingo',
-  'Lunes',
-  'Martes',
-  'Miércoles',
-  'Jueves',
-  'Viernes',
-  'Sábado'
-];
+// Días en español según tu Firestore
+const WEEK_DAYS = ['Domingo','Lunes','Martes','Mié.','Jue.','Vie.','Sáb.'];
 
-export default function BookingScreen({ navigation, route }) {
+export default function BookingScreen({ route, navigation }) {
   const { companyId, serviceId, serviceName, price, duration } = route.params;
+  const userId = auth.currentUser.uid;
 
-  const [schedule, setSchedule] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [days, setDays] = useState([]);                // próximos 7 días
+  const [schedule, setSchedule]     = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [days, setDays]             = useState([]);
   const [selectedDayIdx, setSelectedDayIdx] = useState(0);
-  const [slots, setSlots] = useState([]);              // franjas del día
-  const [reservedSlots, setReservedSlots] = useState(new Set());
-  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [slots, setSlots]           = useState([]);
+  const [selectedSlots, setSelectedSlots]   = useState([]);
 
-  // 1) Carga schedule y bookings
+  // 1) Cargo el schedule de la empresa
   useEffect(() => {
     (async () => {
       try {
-        // Schedule
-        const bizSnap = await getDoc(doc(db, 'business', companyId));
-        if (bizSnap.exists()) setSchedule(bizSnap.data().schedule);
-
-        // Bookings
-        const resSnap = await getDocs(collection(db, 'business', companyId, 'bookings'));
-        const reserved = new Set();
-        resSnap.docs.forEach(d => {
-          const { date, duration: dur } = d.data();
-          let [h, m] = date.slice(11,16).split(':').map(Number);
-          let minutes = h * 60 + m;
-          const count = Math.ceil(dur / 15);
-          for (let i = 0; i < count; i++) {
-            const hh = Math.floor(minutes / 60),
-                  mm = minutes % 60;
-            reserved.add(`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`);
-            minutes += 15;
-          }
-        });
-        setReservedSlots(reserved);
+        const snap = await getDoc(doc(db, 'business', companyId));
+        if (snap.exists()) setSchedule(snap.data().schedule);
       } catch (e) {
-        console.error(e);
+        console.error('Error loading schedule:', e);
       } finally {
         setLoading(false);
       }
     })();
   }, [companyId]);
 
-  // 2) Crear array de próximos 7 días
+  // 2) Genero los próximos 7 días
   useEffect(() => {
-    const today = new Date(), arr = [];
+    const today = new Date();
+    const arr = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date(today);
       d.setDate(today.getDate() + i);
@@ -81,222 +53,213 @@ export default function BookingScreen({ navigation, route }) {
     setDays(arr);
   }, []);
 
-  // 3) Generar franjas de 15m para el día seleccionado
+  // 3) Genero franjas de 15' al cambiar día o schedule
   useEffect(() => {
     if (!schedule || days.length === 0) return;
     const date = days[selectedDayIdx];
-    const info = schedule[ WEEK_DAYS[date.getDay()] ];
+    const dayName = WEEK_DAYS[date.getDay()];
+    const info = schedule[dayName];
     if (!info || info.closed) {
       setSlots([]);
+      setSelectedSlots([]);
       return;
     }
-    const [oh, om] = info.open.split(':').map(Number);
-    const [ch, cm] = info.close.split(':').map(Number);
-    let cur = oh * 60 + om, end = ch * 60 + cm, arr = [];
-    while (cur < end) {
-      const hh = Math.floor(cur / 60), mm = cur % 60;
-      arr.push(`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`);
-      cur += 15;
-    }
-    setSlots(arr);
-    setSelectedSlot(null);
+
+    // calcular reservas ya existentes
+    (async () => {
+      const iso = date.toISOString().slice(0,10);
+      const snapBookings = await getDocs(collection(db, 'business', companyId, 'bookings'));
+      const busy = [];
+      snapBookings.docs.forEach(d => {
+        const b = d.data();
+        if (b.serviceId === serviceId && b.date.slice(0,10) === iso) {
+          const start = parseInt(b.date.slice(11,13),10)*60 + parseInt(b.date.slice(14,16),10);
+          const count = Math.ceil(b.duration/15);
+          for (let i=0;i<count;i++) busy.push(start + i*15);
+        }
+      });
+
+      // generar franjas
+      const [oh, om] = info.open.split(':').map(Number);
+      const [ch, cm] = info.close.split(':').map(Number);
+      let t = oh*60 + om, end = ch*60 + cm;
+      const arr = [];
+      while (t + 15 <= end) {
+        const hh = String(Math.floor(t/60)).padStart(2,'0');
+        const mm = String(t%60).padStart(2,'0');
+        arr.push({
+          label: `${hh}:${mm}`,
+          time: t,
+          occupied: busy.includes(t)
+        });
+        t += 15;
+      }
+      setSlots(arr);
+      setSelectedSlots([]);
+    })();
   }, [schedule, days, selectedDayIdx]);
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary}/>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
-  // comprueba si hay espacio continuo para duration
-  const canStartAt = idx => {
-    const needed = Math.ceil(duration / 15);
-    if (idx + needed > slots.length) return false;
-    for (let i = 0; i < needed; i++) {
-      if (reservedSlots.has(slots[idx + i])) return false;
-    }
-    return true;
-  };
+  const screenWidth = Dimensions.get('window').width;
+  const dayWidth = screenWidth / 5;
 
-  // selecciona franja inicial
+  // seleccionar bloque contiguo de duración
   const onSelect = idx => {
-    if (!canStartAt(idx)) return;
-    setSelectedSlot(slots[idx]);
+    const needed = Math.ceil(duration / 15);
+    const block = slots.slice(idx, idx + needed);
+    if (block.length < needed || block.some(s => s.occupied)) return;
+    setSelectedSlots(block.map(s => s.time));
   };
 
-  // guardar reserva y mostrar confirmación
-  const handleReserve = async () => {
+  // confirmar reserva
+  const confirmBooking = async () => {
+    if (selectedSlots.length === 0) return;
+    const bookingRef = doc(collection(db, 'business', companyId, 'bookings'));
+    const bookingId = bookingRef.id;
+    const start = selectedSlots[0];
+    const hh = String(Math.floor(start/60)).padStart(2,'0');
+    const mm = String(start%60).padStart(2,'0');
+    const dateISO = `${days[selectedDayIdx].toISOString().slice(0,10)}T${hh}:${mm}`;
+
     try {
-      const datePart = days[selectedDayIdx].toISOString().slice(0,10);
-      const iso = `${datePart}T${selectedSlot}`;
-      // 1) en business/bookings
-      await addDoc(collection(db, 'business', companyId, 'bookings'), {
-        clientId: auth.currentUser.uid,
-        clientEmail: auth.currentUser.email,
-        clientName: auth.currentUser.displayName || '',
-        date: iso,
+      // guardar en business
+      await setDoc(bookingRef, {
+        userId,
         serviceId,
         serviceName,
         price,
         duration,
-        status: 'pendiente',
-        createdAt: new Date()
+        date: dateISO,
+        createdAt: new Date().toISOString()
       });
-      // 2) en users/{uid}/reservations
-      await addDoc(collection(db, 'users', auth.currentUser.uid, 'reservations'), {
+      // guardar en users
+      await setDoc(doc(db, 'users', userId, 'reservations', bookingId), {
         companyId,
         serviceId,
         serviceName,
         price,
+        duration,
         slot: {
-          date: datePart,
-          from: selectedSlot,
+          date: dateISO.slice(0,10),
+          from: dateISO.slice(11,16),
           to: (() => {
-            const [h,m] = selectedSlot.split(':').map(Number);
-            const dt = new Date(datePart);
-            dt.setHours(h, m + duration);
-            return `${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+            const endMin = start + duration;
+            return `${String(Math.floor(endMin/60)).padStart(2,'0')}:${String(endMin%60).padStart(2,'0')}`;
           })()
         },
-        status: 'pendiente',
-        createdAt: new Date()
+        createdAt: new Date().toISOString()
       });
-
-      Alert.alert(
-        'Reserva confirmada',
-        `Has reservado "${serviceName}" el ${datePart} a las ${selectedSlot}.`,
-        [
-          {
-            text: 'OK',
-            onPress: () =>
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Welcome', params: { mode: 'usuario' } }]
-              })
-          }
-        ]
-      );
+      navigation.goBack();
     } catch (e) {
-      Alert.alert('Error', 'No se pudo guardar la reserva.');
-      console.error(e);
+      console.error('Booking error:', e);
     }
   };
-
-  const screenW = Dimensions.get('window').width;
-  const dayW = screenW / 4;
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{serviceName}</Text>
       <Text style={styles.subtitle}>{duration} min • € {price}</Text>
 
-      {/* Selector de días */}
       <FlatList
         data={days}
         horizontal
         keyExtractor={d => d.toDateString()}
         showsHorizontalScrollIndicator={false}
-        style={styles.dayList}
+        style={styles.daysList}
         renderItem={({ item, index }) => {
           const sel = index === selectedDayIdx;
-          const key = WEEK_DAYS[item.getDay()];
-          const open = schedule?.[key] && !schedule[key].closed;
+          const dn = WEEK_DAYS[item.getDay()];
+          const openInfo = schedule[dn] && !schedule[dn].closed;
           return (
             <TouchableOpacity
-              style={[styles.dayItem, { width: dayW }, sel && styles.dayItemSel]}
-              onPress={() => open && setSelectedDayIdx(index)}
-              disabled={!open}
+              style={[
+                styles.dayItem,
+                { width: dayWidth },
+                sel && styles.daySelected,
+                !openInfo && styles.dayClosed
+              ]}
+              disabled={!openInfo}
+              onPress={() => setSelectedDayIdx(index)}
             >
-              <Text style={[styles.dayName, sel ? styles.dayNameSel : open ? null : styles.dayNameClosed]}>
-                {key}
-              </Text>
-              <Text style={[styles.dayNum, sel ? styles.dayNumSel : open ? null : styles.dayNameClosed]}>
-                {item.getDate()}
-              </Text>
+              <Text style={[styles.dayName, sel && styles.dayNameSel]}>{dn}</Text>
+              <Text style={[styles.dayNum, sel && styles.dayNumSel]}>{item.getDate()}</Text>
             </TouchableOpacity>
           );
         }}
       />
 
-      {/* Franjas */}
       <FlatList
         data={slots}
         horizontal
-        keyExtractor={s => s}
+        keyExtractor={s => s.time.toString()}
         showsHorizontalScrollIndicator={false}
-        style={styles.slotList}
+        style={styles.slotsList}
         renderItem={({ item, index }) => {
-          const reserved = reservedSlots.has(item);
-          const available = canStartAt(index);
-          const sel = item === selectedSlot;
+          const sel = selectedSlots.includes(item.time);
           return (
             <TouchableOpacity
               style={[
                 styles.slotItem,
-                reserved && styles.slotItemReserved,
-                !available && styles.slotItemDisabled,
-                sel && styles.slotItemSel
+                item.occupied && styles.slotOccupied,
+                sel && styles.slotSelected
               ]}
+              disabled={item.occupied}
               onPress={() => onSelect(index)}
-              disabled={!available}
             >
-              <Text style={[
-                styles.slotText,
-                reserved && styles.slotTextReserved,
-                sel && styles.slotTextSel
-              ]}>
-                {item}
+              <Text style={[styles.slotText, sel && styles.slotTextSel]}>
+                {item.label}
               </Text>
             </TouchableOpacity>
           );
         }}
       />
 
-      {/* Botón Reservar */}
-      <TouchableOpacity
-        style={[styles.bookBtn, !selectedSlot && styles.bookBtnDisabled]}
-        disabled={!selectedSlot}
-        onPress={handleReserve}
-      >
-        <Text style={styles.bookTxt}>Reservar</Text>
-      </TouchableOpacity>
+      {selectedSlots.length > 0 && (
+        <TouchableOpacity style={styles.bookBtn} onPress={confirmBooking}>
+          <Text style={styles.bookBtnText}>Reservar</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container:         { flex:1, backgroundColor:colors.background, padding:16 },
-  center:            { flex:1, justifyContent:'center', alignItems:'center' },
-
-  title:             { ...typography.h2, color:colors.textPrimary, textAlign:'center' },
-  subtitle:          { ...typography.body, color:colors.textSecondary, textAlign:'center', marginBottom:12 },
-
-  dayList:           { maxHeight:100, marginBottom:12 },
-  dayItem:           { alignItems:'center', marginHorizontal:4, padding:8, borderRadius:8 },
-  dayItemSel:        { backgroundColor:colors.primary },
-  dayName:           { ...typography.body },
-  dayNum:            { ...typography.h2, marginTop:4 },
-  dayNameSel:        { color:colors.white },
-  dayNumSel:         { color:colors.white },
-  dayNameClosed:     { color:'#ccc' },
-
-  slotList:          { maxHeight:60, marginBottom:20 },
-  slotItem:          {
-    backgroundColor:colors.white,
-    paddingVertical:8, paddingHorizontal:12,
-    marginHorizontal:4, borderRadius:8,
-    borderWidth:1, borderColor:colors.primary
-  },
-  slotItemReserved:  { backgroundColor:'#f0f0f0' },
-  slotItemDisabled:  { opacity:0.3 },
-  slotItemSel:       { backgroundColor:colors.primary },
-  slotText:          { ...typography.body, color:colors.textPrimary },
-  slotTextReserved:  { textDecorationLine:'line-through', color:'#999' },
-  slotTextSel:       { color:colors.white, fontWeight:'600' },
-
-  bookBtn:           { backgroundColor:colors.primary, paddingVertical:14, borderRadius:25, alignItems:'center' },
-  bookBtnDisabled:   { opacity:0.5 },
-  bookTxt:           { ...typography.body, color:colors.buttonText, fontWeight:'600' }
+  container:     { flex:1, backgroundColor:colors.background, padding:16 },
+  center:        { flex:1,justifyContent:'center',alignItems:'center' },
+  title:         { ...typography.h2, textAlign:'center' },
+  subtitle:      { ...typography.body, textAlign:'center', marginBottom:12 },
+  daysList:      { marginVertical:8 },
+  dayItem:       {
+                  alignItems:'center', padding:8, marginHorizontal:4,
+                  borderRadius:8, backgroundColor:colors.white,
+                  borderWidth:1, borderColor:colors.primary
+                },
+  daySelected:   { backgroundColor:colors.primary },
+  dayClosed:     { opacity:0.4 },
+  dayName:       { ...typography.body, color:colors.textPrimary },
+  dayNameSel:    { color:colors.buttonText },
+  dayNum:        { ...typography.h2, marginTop:4 },
+  dayNumSel:     { color:colors.buttonText },
+  slotsList:     { marginVertical:16 },
+  slotItem:      {
+                  padding:10, marginHorizontal:4, borderRadius:8,
+                  borderWidth:1, borderColor:colors.primary,
+                  backgroundColor:colors.white
+                },
+  slotOccupied:  { backgroundColor:'#f0f0f0', borderColor:'#ccc' },
+  slotSelected:  { backgroundColor:colors.primary },
+  slotText:      { ...typography.body, color:colors.textPrimary },
+  slotTextSel:   { color:colors.buttonText },
+  bookBtn:       {
+                  backgroundColor:colors.primary, padding:14,
+                  borderRadius:25, alignItems:'center', marginTop:20
+                },
+  bookBtnText:   { ...typography.body, color:colors.buttonText }
 });

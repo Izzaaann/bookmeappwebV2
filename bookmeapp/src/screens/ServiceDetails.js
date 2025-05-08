@@ -1,132 +1,144 @@
 // src/screens/ServiceDetails.js
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
+  FlatList,
   TouchableOpacity,
   StyleSheet,
-  ScrollView
+  Alert
 } from 'react-native';
+import { auth, db } from '../firebase/config';
+import {
+  collection,
+  addDoc,
+  doc,
+  updateDoc,
+  arrayRemove,
+  getDocs
+} from 'firebase/firestore';
 import colors from '../theme/colors';
 import typography from '../theme/typography';
 
-/**
- * Pantalla de detalles de un servicio.
- * Muestra nombre, descripción, duración y precio.
- *
- * Props recibidas vía React Navigation:
- *  - route.params.serviceName
- *  - route.params.description
- *  - route.params.duration
- *  - route.params.price
- *  - navigation
- */
 export default function ServiceDetails({ route, navigation }) {
-  const { serviceName, description, duration, price, companyId, serviceId } = route.params;
+  const {
+    companyId,
+    serviceId,
+    serviceName,
+    price,
+    availability,
+    duration
+  } = route.params;
+
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [reviews, setReviews] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      const snap = await getDocs(
+        collection(db, 'business', companyId, 'services', serviceId, 'reviews')
+      );
+      setReviews(snap.docs.map(d => d.data()));
+    })();
+  }, []);
+
+  const handleViewBooking = () => {
+    navigation.navigate('Booking', {
+      companyId,
+      serviceId,
+      serviceName,
+      price,
+      duration
+    });
+  };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* Nombre del servicio */}
-      <Text style={styles.title}>{serviceName}</Text>
-
-      {/* Descripción */}
-      {description ? (
-        <Text style={styles.description}>{description}</Text>
-      ) : null}
-
-      {/* Fila duración y precio */}
-      <View style={styles.row}>
-        <View style={styles.durationBox}>
-          <Text style={styles.durationText}>{duration} min</Text>
-        </View>
-        <View style={styles.priceBox}>
-          <Text style={styles.priceText}>€ {price}</Text>
-        </View>
-      </View>
-
-      {/* Botón Reservar */}
+    <View style={styles.container}>
+      <Text style={styles.header}>{serviceName}</Text>
+      <Text style={styles.price}>€ {price}</Text>
+      <Text style={styles.subheader}>Horas disponibles</Text>
+      <FlatList
+        data={availability}
+        keyExtractor={(_, i) => i.toString()}
+        numColumns={3}
+        renderItem={({ item }) => {
+          const isSelected = selectedSlot === item;
+          return (
+            <TouchableOpacity
+              style={[styles.slotSquare, isSelected && styles.slotSelected]}
+              onPress={() => setSelectedSlot(item)}
+            >
+              <Text style={[styles.slotText, isSelected && styles.textSelected]}>
+                {item.date}
+              </Text>
+              <Text style={[styles.slotText, isSelected && styles.textSelected]}>
+                {item.from}–{item.to}
+              </Text>
+            </TouchableOpacity>
+          );
+        }}
+      />
       <TouchableOpacity
-        style={styles.reserveBtn}
-        onPress={() =>
-          navigation.navigate('Booking', {
-            companyId,
-            serviceId,
-            serviceName,
-            price,
-            duration
-          })
-        }
+        style={[styles.reserveBtn, !selectedSlot && styles.btnDisabled]}
+        disabled={!selectedSlot}
+        onPress={handleViewBooking}
       >
-        <Text style={styles.reserveText}>Reservar</Text>
+        <Text style={styles.reserveText}>Seleccionar Horario</Text>
       </TouchableOpacity>
-    </ScrollView>
+
+      <Text style={styles.reviewHeader}>Valoraciones</Text>
+      {reviews.length === 0 ? (
+        <Text style={styles.noReviews}>Aún no hay valoraciones.</Text>
+      ) : (
+        reviews.map((r, i) => (
+          <View key={i} style={styles.reviewCard}>
+            <Text style={styles.reviewStars}>
+              {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
+            </Text>
+            {r.comment ? (
+              <Text style={styles.reviewComment}>{r.comment}</Text>
+            ) : null}
+          </View>
+        ))
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 20,
-    backgroundColor: colors.background,
-    flexGrow: 1,
-    justifyContent: 'flex-start'
-  },
-  title: {
-    ...typography.h1,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 16
-  },
-  description: {
-    ...typography.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 40
-  },
-  durationBox: {
-    flex: 1,
-    backgroundColor: colors.white,
-    padding: 12,
-    borderRadius: 8,
-    marginRight: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.primary
-  },
-  durationText: {
-    ...typography.body,
-    color: colors.textPrimary,
-    fontWeight: '600'
-  },
-  priceBox: {
-    width: 100,
-    backgroundColor: colors.white,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.primary
-  },
-  priceText: {
-    ...typography.body,
-    color: colors.textPrimary,
-    fontWeight: '600'
-  },
-  reserveBtn: {
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    borderRadius: 25,
-    alignItems: 'center'
-  },
-  reserveText: {
-    ...typography.body,
-    color: colors.buttonText,
-    fontWeight: '600'
-  }
+  container:       { flex:1, backgroundColor:colors.background, padding:20 },
+  header:          { ...typography.h1, textAlign:'center', marginBottom:4 },
+  price:           { ...typography.body, textAlign:'center', marginBottom:12 },
+  subheader:       { ...typography.h2, marginBottom:8 },
+  slotSquare:      {
+                     flex:1,
+                     aspectRatio:1,
+                     margin:4,
+                     backgroundColor:colors.white,
+                     borderRadius:8,
+                     borderWidth:1,
+                     borderColor:colors.primary,
+                     justifyContent:'center',
+                     alignItems:'center'
+                   },
+  slotSelected:    { backgroundColor:colors.primary },
+  slotText:        { ...typography.body, textAlign:'center', color:colors.textPrimary },
+  textSelected:    { color:colors.white },
+  reserveBtn:      {
+                     marginTop:20,
+                     backgroundColor:colors.primary,
+                     padding:14,
+                     borderRadius:25,
+                     alignItems:'center'
+                   },
+  btnDisabled:     { opacity:0.5 },
+  reserveText:     { ...typography.body, color:colors.buttonText, fontWeight:'600' },
+
+  reviewHeader:    { ...typography.h2, marginTop:20 },
+  noReviews:       { ...typography.body, color:colors.textSecondary, marginTop:8 },
+  reviewCard:      { marginTop:12, backgroundColor:colors.white, padding:12, borderRadius:8 },
+  reviewStars:     { fontSize:18, color:'#f5a623' },
+  reviewComment:   { ...typography.body, marginTop:4 }
 });

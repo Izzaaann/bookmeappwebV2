@@ -7,7 +7,8 @@ import {
   StatusBar,
   FlatList,
   ActivityIndicator,
-  Image
+  Image,
+  Dimensions
 } from 'react-native';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase/config';
@@ -16,11 +17,15 @@ import colors from '../theme/colors';
 import typography from '../theme/typography';
 import { Ionicons } from '@expo/vector-icons';
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH  = SCREEN_WIDTH * 0.96;
+const CARD_HEIGHT = 160;
+
 export default function Welcome({ route, navigation }) {
-  const { mode } = route.params;
+  const { mode } = route.params;  // 'usuario' | 'empresa'
   const [userData, setUserData] = useState({ name: '', photoURL: null });
   const [companies, setCompanies] = useState([]);
-  const [loading, setLoading] = useState(mode === 'usuario');
+  const [loading, setLoading]   = useState(mode === 'usuario');
 
   useEffect(() => {
     (async () => {
@@ -37,7 +42,7 @@ export default function Welcome({ route, navigation }) {
       if (mode === 'usuario') {
         setLoading(true);
         const snap2 = await getDocs(collection(db, 'business'));
-        setCompanies(snap2.docs.map(d => ({ id: d.id, name: d.data().businessName })));
+        setCompanies(snap2.docs.map(d => ({ id: d.id, ...d.data() })));
         setLoading(false);
       }
     })();
@@ -48,61 +53,93 @@ export default function Welcome({ route, navigation }) {
     navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
   };
 
+  const openCompany = item =>
+    navigation.navigate('CompanyDetails', {
+      companyId: item.id,
+      companyName: item.businessName
+    });
+
+  const renderCompany = ({ item }) => (
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() => openCompany(item)}
+      activeOpacity={0.85}
+    >
+      {item.bannerUrl
+        ? <Image source={{ uri: item.bannerUrl }} style={styles.banner} />
+        : <View style={styles.bannerPlaceholder}/>}
+
+      <View style={styles.logoContainer}>
+        {item.logoUrl
+          ? <Image source={{ uri: item.logoUrl }} style={styles.logo}/>
+          : <Ionicons name="business" size={40} color={colors.primary}/>}        
+      </View>
+
+      <View style={styles.info}>
+        <Text style={styles.companyName}>{item.businessName}</Text>
+        <Text style={styles.description} numberOfLines={2}>
+          {item.description || item.address || 'Sin descripción.'}
+        </Text>
+        <TouchableOpacity
+          style={styles.viewBtn}
+          onPress={() => openCompany(item)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.viewBtnText}>Ver Empresa</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
+
+      {/* Cabecera */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.navigate('Profile', { mode })}>
-          {userData.photoURL ? (
-            <Image source={{ uri: userData.photoURL }} style={styles.avatar} />
-          ) : (
-            <Ionicons name="person-circle" size={36} color={colors.white} />
-          )}
-        </TouchableOpacity>
-        <Text style={styles.title}>
-          Bienvenido <Text style={styles.name}>{userData.name}</Text>
-        </Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => navigation.navigate('Profile', { mode })}>
+            {userData.photoURL
+              ? <Image source={{ uri: userData.photoURL }} style={styles.avatar}/>
+              : <Ionicons name="person-circle-outline" size={50} color={colors.white}/>}            
+          </TouchableOpacity>
+          <View style={styles.greeting}>
+            <Text style={styles.greetingText}>Hola,</Text>
+            <Text style={styles.greetingName}>{userData.name}</Text>
+          </View>
+        </View>
         {mode === 'usuario' && (
           <TouchableOpacity onPress={() => navigation.navigate('MyReservations')}>
-            <Ionicons name="calendar-outline" size={28} color={colors.white} />
+            <Ionicons name="calendar" size={28} color={colors.white} />
           </TouchableOpacity>
         )}
       </View>
 
+      {/* Menú o listado */}
       {mode === 'empresa' ? (
-        <View style={styles.empresaMenu}>
-          <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('Services')}>
-            <Text style={styles.btnText}>Servicios</Text>
+        <View style={styles.menu}>
+          <TouchableOpacity style={styles.menuBtn} onPress={() => navigation.navigate('Services')}>
+            <Ionicons name="briefcase" size={20} color={colors.primary} />
+            <Text style={styles.menuText}>Servicios</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('ManageBookings')}>
-            <Text style={styles.btnText}>Gestionar Citas</Text>
+          <TouchableOpacity style={styles.menuBtn} onPress={() => navigation.navigate('ManageBookings')}>
+            <Ionicons name="calendar" size={20} color={colors.primary} />
+            <Text style={styles.menuText}>Citas</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('ManageSchedule')}>
-            <Text style={styles.btnText}>Gestionar Horario</Text>
+          <TouchableOpacity style={styles.menuBtn} onPress={() => navigation.navigate('ManageSchedule')}>
+            <Ionicons name="time" size={20} color={colors.primary} />
+            <Text style={styles.menuText}>Horario</Text>
           </TouchableOpacity>
         </View>
       ) : loading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} size="large" color={colors.primary} />
-      ) : companies.length === 0 ? (
-        <Text style={styles.emptyText}>No hay empresas disponibles.</Text>
+        <ActivityIndicator style={styles.loading} size="large" color={colors.primary} />
       ) : (
         <FlatList
           data={companies}
           keyExtractor={i => i.id}
-          contentContainerStyle={{ paddingTop: 20 }}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.card}
-              onPress={() =>
-                navigation.navigate('CompanyDetails', {
-                  companyId: item.id,
-                  companyName: item.name
-                })
-              }
-            >
-              <Text style={styles.companyName}>{item.name}</Text>
-            </TouchableOpacity>
-          )}
+          renderItem={renderCompany}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
         />
       )}
 
@@ -114,43 +151,36 @@ export default function Welcome({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container:    { flex: 1, backgroundColor: colors.background },
-  header:       {
-                  backgroundColor: colors.primary,
-                  paddingTop: 50,
-                  paddingBottom: 20,
-                  paddingHorizontal: 20,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                },
-  avatar:       { width: 36, height: 36, borderRadius: 18 },
-  title:        { color: colors.white, fontSize: 20 },
-  name:         { fontSize: 24, fontWeight: '700' },
-  empresaMenu:  { marginTop: 40, alignItems: 'center' },
-  btn:          {
-                  width: '80%',
-                  backgroundColor: colors.white,
-                  padding: 14,
-                  borderRadius: 30,
-                  marginVertical: 10,
-                  alignItems: 'center',
-                  shadowColor: '#000',
-                  shadowOpacity: 0.1,
-                  shadowRadius: 10,
-                  elevation: 5
-                },
-  btnText:      { color: colors.primary, fontSize: 16, fontWeight: '600' },
-  emptyText:    { textAlign: 'center', marginTop: 40, color: colors.textSecondary },
-  card:         {
-                  backgroundColor: colors.white,
-                  marginHorizontal: 20,
-                  marginVertical: 8,
-                  padding: 16,
-                  borderRadius: 12,
-                  elevation: 3
-                },
-  companyName:  { fontSize: 18, fontWeight: '600', color: colors.textPrimary },
-  logout:       { alignSelf: 'center', marginVertical: 20 },
-  logoutText:   { color: colors.primary, fontSize: 16, fontWeight: '600' }
+  container:  { flex:1, backgroundColor: colors.background },
+  header: {
+    flexDirection:'row', alignItems:'center', justifyContent:'space-between',
+    backgroundColor: colors.primary, padding: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20
+  },
+  headerLeft: { flexDirection:'row', alignItems:'center' },
+  avatar:     { width:50, height:50, borderRadius:25, marginRight:12, borderWidth:2, borderColor:colors.accent },
+  greeting:   {},
+  greetingText: { color:colors.white, fontSize:16 },
+  greetingName: { color:colors.white, fontSize:20, fontWeight:'700' },
+
+  menu:      { flexDirection:'row', justifyContent:'space-around', marginVertical:20 },
+  menuBtn:   { flexDirection:'row', alignItems:'center', backgroundColor:colors.white, padding:12, borderRadius:25, elevation:3 },
+  menuText:  { marginLeft:6, color:colors.primary, fontWeight:'600' },
+
+  loading:   { marginTop:40 },
+
+  list:      { padding:10 },
+  card:      { width:CARD_WIDTH, backgroundColor:'#fff', borderRadius:12, marginVertical:10, alignSelf:'center', overflow:'hidden', elevation:5 },
+  banner:    { width:'100%', height:CARD_HEIGHT },
+  bannerPlaceholder: { width:'100%', height:CARD_HEIGHT, backgroundColor:'#ddd' },
+  logoContainer: { position:'absolute', top:CARD_HEIGHT - 40, left:20, width:60, height:60, borderRadius:30, backgroundColor:'#fff', justifyContent:'center', alignItems:'center', elevation:5 },
+  logo:      { width:56, height:56, borderRadius:28 },
+
+  info:      { padding:16, paddingTop:24 },
+  companyName: { ...typography.h1, fontSize:18, color:colors.textPrimary },
+  description: { ...typography.body, color:colors.textSecondary, marginVertical:6, lineHeight:20 },
+  viewBtn:   { marginTop:8, backgroundColor:colors.accent, paddingVertical:6, paddingHorizontal:20, borderRadius:20 },
+  viewBtnText: { color:colors.white, fontWeight:'600' },
+
+  logout:    { position:'absolute', bottom:20, alignSelf:'center' },
+  logoutText:{ color:colors.primary, fontWeight:'600', fontSize:16 }
 });
