@@ -22,10 +22,10 @@ const CARD_WIDTH  = SCREEN_WIDTH * 0.96;
 const CARD_HEIGHT = 160;
 
 export default function Welcome({ route, navigation }) {
-  const { mode } = route.params;  // 'usuario' | 'empresa'
-  const [userData, setUserData] = useState({ name: '', photoURL: null });
+  const { mode } = route.params;
+  const [userData, setUserData]   = useState({ name: '', photoURL: null });
   const [companies, setCompanies] = useState([]);
-  const [loading, setLoading]   = useState(mode === 'usuario');
+  const [loading, setLoading]     = useState(mode === 'usuario');
 
   useEffect(() => {
     (async () => {
@@ -48,11 +48,6 @@ export default function Welcome({ route, navigation }) {
     })();
   }, []);
 
-  const handleLogout = async () => {
-    await signOut(auth);
-    navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-  };
-
   const openCompany = item =>
     navigation.navigate('CompanyDetails', {
       companyId: item.id,
@@ -60,35 +55,45 @@ export default function Welcome({ route, navigation }) {
     });
 
   const renderCompany = ({ item }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => openCompany(item)}
-      activeOpacity={0.85}
-    >
-      {item.bannerUrl
-        ? <Image source={{ uri: item.bannerUrl }} style={styles.banner} />
-        : <View style={styles.bannerPlaceholder}/>}
-
-      <View style={styles.logoContainer}>
-        {item.logoUrl
-          ? <Image source={{ uri: item.logoUrl }} style={styles.logo}/>
-          : <Ionicons name="business" size={40} color={colors.primary}/>}        
-      </View>
-
-      <View style={styles.info}>
-        <Text style={styles.companyName}>{item.businessName}</Text>
-        <Text style={styles.description} numberOfLines={2}>
-          {item.description || item.address || 'Sin descripción.'}
-        </Text>
-        <TouchableOpacity
-          style={styles.viewBtn}
-          onPress={() => openCompany(item)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.viewBtnText}>Ver Empresa</Text>
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
+    <View style={styles.cardContainer}>
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => openCompany(item)}
+        activeOpacity={0.85}
+      >
+        {item.bannerUrl
+          ? <Image source={{ uri: item.bannerUrl }} style={styles.banner} />
+          : <View style={styles.bannerPlaceholder}/>}
+        <View style={styles.logoContainer}>
+          {item.logoUrl
+            ? <Image source={{ uri: item.logoUrl }} style={styles.logo}/>
+            : <Ionicons name="business" size={40} color={colors.primary}/>}
+        </View>
+        <View style={styles.info}>
+          <Text style={styles.companyName}>{item.businessName}</Text>
+          <Text style={styles.description} numberOfLines={2}>
+            {item.description || item.address || 'Sin descripción.'}
+          </Text>
+          <TouchableOpacity
+            style={styles.viewBtn}
+            onPress={() => openCompany(item)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.viewBtnText}>Ver Empresa</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.opinionsBtn}
+        onPress={() => navigation.navigate('Opinions', {
+          companyId: item.id,
+          companyName: item.businessName,
+          viewOnly: true
+        })}
+      >
+        <Text style={styles.opinionsBtnText}>Ver opiniones</Text>
+      </TouchableOpacity>
+    </View>
   );
 
   return (
@@ -101,7 +106,7 @@ export default function Welcome({ route, navigation }) {
           <TouchableOpacity onPress={() => navigation.navigate('Profile', { mode })}>
             {userData.photoURL
               ? <Image source={{ uri: userData.photoURL }} style={styles.avatar}/>
-              : <Ionicons name="person-circle-outline" size={50} color={colors.white}/>}            
+              : <Ionicons name="person-circle-outline" size={50} color={colors.white}/>}
           </TouchableOpacity>
           <View style={styles.greeting}>
             <Text style={styles.greetingText}>Hola,</Text>
@@ -130,6 +135,17 @@ export default function Welcome({ route, navigation }) {
             <Ionicons name="time" size={20} color={colors.primary} />
             <Text style={styles.menuText}>Horario</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.menuBtn}
+            onPress={() => navigation.navigate('Opinions', {
+              companyId: auth.currentUser.uid,
+              companyName: userData.name,
+              viewOnly: true
+            })}
+          >
+            <Ionicons name="chatbubbles" size={20} color={colors.primary} />
+            <Text style={styles.menuText}>Reseñas</Text>
+          </TouchableOpacity>
         </View>
       ) : loading ? (
         <ActivityIndicator style={styles.loading} size="large" color={colors.primary} />
@@ -142,45 +158,55 @@ export default function Welcome({ route, navigation }) {
           showsVerticalScrollIndicator={false}
         />
       )}
-
-      <TouchableOpacity style={styles.logout} onPress={handleLogout}>
-        <Text style={styles.logoutText}>Cerrar Sesión</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container:  { flex:1, backgroundColor: colors.background },
-  header: {
-    flexDirection:'row', alignItems:'center', justifyContent:'space-between',
-    backgroundColor: colors.primary, padding: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20
-  },
-  headerLeft: { flexDirection:'row', alignItems:'center' },
-  avatar:     { width:50, height:50, borderRadius:25, marginRight:12, borderWidth:2, borderColor:colors.accent },
-  greeting:   {},
+  container:    { flex:1, backgroundColor: colors.background },
+  header:       {
+                  flexDirection:'row', alignItems:'center', justifyContent:'space-between',
+                  backgroundColor: colors.primary, padding: 20,
+                  borderBottomLeftRadius: 20, borderBottomRightRadius: 20
+                },
+  headerLeft:   { flexDirection:'row', alignItems:'center' },
+  avatar:       { width:50, height:50, borderRadius:25, marginRight:12, borderWidth:2, borderColor:colors.accent },
+  greeting:     {},
   greetingText: { color:colors.white, fontSize:16 },
   greetingName: { color:colors.white, fontSize:20, fontWeight:'700' },
 
-  menu:      { flexDirection:'row', justifyContent:'space-around', marginVertical:20 },
-  menuBtn:   { flexDirection:'row', alignItems:'center', backgroundColor:colors.white, padding:12, borderRadius:25, elevation:3 },
-  menuText:  { marginLeft:6, color:colors.primary, fontWeight:'600' },
+  menu:         { flexDirection:'row', justifyContent:'space-around', marginVertical:20 },
+  menuBtn:      { flexDirection:'row', alignItems:'center', backgroundColor:colors.white, padding:12, borderRadius:25, elevation:3 },
+  menuText:     { marginLeft:6, color:colors.primary, fontWeight:'600' },
 
-  loading:   { marginTop:40 },
+  loading:      { marginTop:40 },
 
-  list:      { padding:10 },
-  card:      { width:CARD_WIDTH, backgroundColor:'#fff', borderRadius:12, marginVertical:10, alignSelf:'center', overflow:'hidden', elevation:5 },
-  banner:    { width:'100%', height:CARD_HEIGHT },
-  bannerPlaceholder: { width:'100%', height:CARD_HEIGHT, backgroundColor:'#ddd' },
-  logoContainer: { position:'absolute', top:CARD_HEIGHT - 40, left:20, width:60, height:60, borderRadius:30, backgroundColor:'#fff', justifyContent:'center', alignItems:'center', elevation:5 },
-  logo:      { width:56, height:56, borderRadius:28 },
+  list:         { padding:10 },
+  cardContainer:{ alignItems:'center', marginBottom:8 },
+  card:         {
+                  width: CARD_WIDTH, backgroundColor:'#fff', borderRadius:12,
+                  marginVertical:10, overflow:'hidden', elevation:5
+                },
+  banner:       { width:'100%', height: CARD_HEIGHT },
+  bannerPlaceholder:{ width:'100%', height: CARD_HEIGHT, backgroundColor:'#ddd' },
+  logoContainer:{ position:'absolute', top: CARD_HEIGHT - 40, left:20,
+                  width:60, height:60, borderRadius:30, backgroundColor:'#fff',
+                  justifyContent:'center', alignItems:'center', elevation:5 },
+  logo:         { width:56, height:56, borderRadius:28 },
 
-  info:      { padding:16, paddingTop:24 },
-  companyName: { ...typography.h1, fontSize:18, color:colors.textPrimary },
-  description: { ...typography.body, color:colors.textSecondary, marginVertical:6, lineHeight:20 },
-  viewBtn:   { marginTop:8, backgroundColor:colors.accent, paddingVertical:6, paddingHorizontal:20, borderRadius:20 },
-  viewBtnText: { color:colors.white, fontWeight:'600' },
+  info:         { padding:16, paddingTop:24 },
+  companyName:  { ...typography.h1, fontSize:18, color:colors.textPrimary },
+  description:  { ...typography.body, color:colors.textSecondary, marginVertical:6, lineHeight:20 },
+  viewBtn:      { marginTop:8, backgroundColor:colors.accent, paddingVertical:6, paddingHorizontal:20, borderRadius:20 },
+  viewBtnText:  { color:colors.white, fontWeight:'600' },
 
-  logout:    { position:'absolute', bottom:20, alignSelf:'center' },
-  logoutText:{ color:colors.primary, fontWeight:'600', fontSize:16 }
+  opinionsBtn:  {
+                  backgroundColor:colors.primary,
+                  paddingVertical:8,
+                  paddingHorizontal:20,
+                  borderRadius:20,
+                  marginTop:4,
+                  elevation:2
+                },
+  opinionsBtnText:{ color:colors.buttonText, fontWeight:'600' }
 });

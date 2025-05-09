@@ -1,17 +1,25 @@
 // src/utils/cloudinary.js
 
-import { CLOUDINARY_URL, CLOUDINARY_UPLOAD_PRESET } from '../config';
-
 /**
- * Sube un blob de imagen a Cloudinary y devuelve la URL pública.
- *
- * @param {Blob} fileBlob – El contenido de la imagen (blob).
- * @param {'client_profile' | 'business_profile' | 'business_banner'} imageType – 
- *        para organizar carpetas en Cloudinary.
- * @returns {Promise<string>} – La URL segura de la imagen subida.
+ * Sube una imagen a Cloudinary desde React Native.
+ * Recibe un objeto con { uri }, y el tipo de imagen para elegir carpeta.
+ * Devuelve la URL segura.
  */
-export async function uploadToCloudinary(fileBlob, imageType = 'client_profile') {
-  // Definir carpeta en Cloudinary según tipo
+export async function uploadToCloudinary(file, imageType = 'client_profile') {
+  const { uri } = file;
+  // Extraer extensión
+  const match = /\.(\w+)$/.exec(uri);
+  const ext = match ? match[1] : 'jpg';
+  const formData = new FormData();
+
+  formData.append('file', {
+    uri,
+    name: `upload.${ext}`,
+    type: `image/${ext === 'jpg' ? 'jpeg' : ext}`
+  });
+  formData.append('upload_preset', 'bookme_uploads');
+  formData.append('api_key', '891687494156926');
+
   let folder = '';
   switch (imageType) {
     case 'client_profile':
@@ -24,24 +32,26 @@ export async function uploadToCloudinary(fileBlob, imageType = 'client_profile')
       folder = 'business_banners';
       break;
   }
+  if (folder) formData.append('folder', folder);
 
-  const formData = new FormData();
-  formData.append('file', fileBlob);
-  formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-  if (folder) {
-    formData.append('folder', folder);
+  try {
+    const response = await fetch(
+      'https://api.cloudinary.com/v1_1/duzymlxzl/image/upload',
+      {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    if (!response.ok) {
+      throw new Error(`Cloudinary error ${response.status}`);
+    }
+    const data = await response.json();
+    return data.secure_url;
+  } catch (err) {
+    console.error('Error al subir imagen a Cloudinary:', err);
+    throw err;
   }
-
-  const res = await fetch(CLOUDINARY_URL, {
-    method: 'POST',
-    body: formData
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Cloudinary upload failed: ${err}`);
-  }
-
-  const data = await res.json();
-  return data.secure_url;
 }
