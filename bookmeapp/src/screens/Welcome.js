@@ -8,7 +8,8 @@ import {
   FlatList,
   ActivityIndicator,
   Image,
-  Dimensions
+  Dimensions,
+  TextInput
 } from 'react-native';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase/config';
@@ -25,6 +26,8 @@ export default function Welcome({ route, navigation }) {
   const { mode } = route.params;
   const [userData, setUserData]   = useState({ name: '', photoURL: null });
   const [companies, setCompanies] = useState([]);
+  const [filteredCompanies, setFilteredCompanies] = useState([]);
+  const [searchText, setSearchText] = useState('');
   const [loading, setLoading]     = useState(mode === 'usuario');
 
   useEffect(() => {
@@ -42,11 +45,20 @@ export default function Welcome({ route, navigation }) {
       if (mode === 'usuario') {
         setLoading(true);
         const snap2 = await getDocs(collection(db, 'business'));
-        setCompanies(snap2.docs.map(d => ({ id: d.id, ...d.data() })));
+        const fetchedCompanies = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
+        setCompanies(fetchedCompanies);
+        setFilteredCompanies(fetchedCompanies);
         setLoading(false);
       }
     })();
   }, []);
+
+  const filterCompanies = () => {
+    const filtered = companies.filter(c =>
+      c.businessName.toLowerCase().includes(searchText.toLowerCase())
+    );
+    setFilteredCompanies(filtered);
+  };
 
   const openCompany = item =>
     navigation.navigate('CompanyDetails', {
@@ -63,7 +75,7 @@ export default function Welcome({ route, navigation }) {
       >
         {item.bannerUrl
           ? <Image source={{ uri: item.bannerUrl }} style={styles.banner} />
-          : <View style={styles.bannerPlaceholder}/>}
+          : <View style={styles.bannerPlaceholder}/>} 
         <View style={styles.logoContainer}>
           {item.logoUrl
             ? <Image source={{ uri: item.logoUrl }} style={styles.logo}/>
@@ -100,13 +112,12 @@ export default function Welcome({ route, navigation }) {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
 
-      {/* Cabecera */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity onPress={() => navigation.navigate('Profile', { mode })}>
             {userData.photoURL
               ? <Image source={{ uri: userData.photoURL }} style={styles.avatar}/>
-              : <Ionicons name="person-circle-outline" size={50} color={colors.white}/>}
+              : <Ionicons name="person-circle-outline" size={50} color={colors.white}/>} 
           </TouchableOpacity>
           <View style={styles.greeting}>
             <Text style={styles.greetingText}>Hola,</Text>
@@ -120,7 +131,23 @@ export default function Welcome({ route, navigation }) {
         )}
       </View>
 
-      {/* Menú o listado */}
+      {mode === 'usuario' && (
+        <View style={{ flexDirection: 'row', marginHorizontal: 16, marginTop: 10 }}>
+          <TextInput
+            style={{ flex: 1, backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 16, borderWidth: 1, borderColor: colors.primary }}
+            placeholder="Buscar empresa..."
+            value={searchText}
+            onChangeText={setSearchText}
+          />
+          <TouchableOpacity
+            onPress={filterCompanies}
+            style={{ marginLeft: 8, backgroundColor: colors.primary, paddingHorizontal: 16, justifyContent: 'center', borderRadius: 20 }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '600' }}>Buscar</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {mode === 'empresa' ? (
         <View style={styles.menu}>
           <TouchableOpacity style={styles.menuBtn} onPress={() => navigation.navigate('Services')}>
@@ -149,9 +176,11 @@ export default function Welcome({ route, navigation }) {
         </View>
       ) : loading ? (
         <ActivityIndicator style={styles.loading} size="large" color={colors.primary} />
+      ) : filteredCompanies.length === 0 ? (
+        <Text style={styles.emptyText}>No hay empresas disponibles.</Text>
       ) : (
         <FlatList
-          data={companies}
+          data={filteredCompanies}
           keyExtractor={i => i.id}
           renderItem={renderCompany}
           contentContainerStyle={styles.list}
@@ -208,5 +237,6 @@ const styles = StyleSheet.create({
                   marginTop:4,
                   elevation:2
                 },
-  opinionsBtnText:{ color:colors.buttonText, fontWeight:'600' }
+  opinionsBtnText:{ color:colors.buttonText, fontWeight:'600' },
+  emptyText:     { textAlign: 'center', marginTop: 40, color: colors.textSecondary }
 });

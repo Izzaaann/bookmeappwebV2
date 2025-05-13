@@ -10,7 +10,7 @@ import {
   Image
 } from 'react-native';
 import { auth, db } from '../firebase/config';
-import { collection, getDocs, addDoc, getDoc, doc, updateDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, getDoc, doc, updateDoc } from 'firebase/firestore';
 import colors from '../theme/colors';
 import typography from '../theme/typography';
 import { Ionicons } from '@expo/vector-icons';
