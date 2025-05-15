@@ -6,14 +6,15 @@ import {
   FlatList,
   StyleSheet,
   Dimensions,
-  ActivityIndicator
+  ActivityIndicator,
+  ScrollView,
+  Alert
 } from 'react-native';
 import { doc, getDoc, getDocs, collection, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import colors from '../theme/colors';
 import typography from '../theme/typography';
 
-// Días en español según tu Firestore
 const WEEK_DAYS = ['Domingo','Lunes','Martes','Mié.','Jue.','Vie.','Sáb.'];
 
 export default function BookingScreen({ route, navigation }) {
@@ -27,7 +28,6 @@ export default function BookingScreen({ route, navigation }) {
   const [slots, setSlots]           = useState([]);
   const [selectedSlots, setSelectedSlots]   = useState([]);
 
-  // 1) Cargo el schedule de la empresa
   useEffect(() => {
     (async () => {
       try {
@@ -41,11 +41,10 @@ export default function BookingScreen({ route, navigation }) {
     })();
   }, [companyId]);
 
-  // 2) Genero los próximos 7 días
   useEffect(() => {
     const today = new Date();
     const arr = [];
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 30; i++) {
       const d = new Date(today);
       d.setDate(today.getDate() + i);
       arr.push(d);
@@ -53,7 +52,6 @@ export default function BookingScreen({ route, navigation }) {
     setDays(arr);
   }, []);
 
-  // 3) Genero franjas de 15' al cambiar día o schedule
   useEffect(() => {
     if (!schedule || days.length === 0) return;
     const date = days[selectedDayIdx];
@@ -65,7 +63,6 @@ export default function BookingScreen({ route, navigation }) {
       return;
     }
 
-    // calcular reservas ya existentes
     (async () => {
       const iso = date.toISOString().slice(0,10);
       const snapBookings = await getDocs(collection(db, 'business', companyId, 'bookings'));
@@ -79,7 +76,6 @@ export default function BookingScreen({ route, navigation }) {
         }
       });
 
-      // generar franjas
       const [oh, om] = info.open.split(':').map(Number);
       const [ch, cm] = info.close.split(':').map(Number);
       let t = oh*60 + om, end = ch*60 + cm;
@@ -110,7 +106,6 @@ export default function BookingScreen({ route, navigation }) {
   const screenWidth = Dimensions.get('window').width;
   const dayWidth = screenWidth / 5;
 
-  // seleccionar bloque contiguo de duración
   const onSelect = idx => {
     const needed = Math.ceil(duration / 15);
     const block = slots.slice(idx, idx + needed);
@@ -118,7 +113,6 @@ export default function BookingScreen({ route, navigation }) {
     setSelectedSlots(block.map(s => s.time));
   };
 
-  // confirmar reserva
   const confirmBooking = async () => {
     if (selectedSlots.length === 0) return;
     const bookingRef = doc(collection(db, 'business', companyId, 'bookings'));
@@ -129,7 +123,6 @@ export default function BookingScreen({ route, navigation }) {
     const dateISO = `${days[selectedDayIdx].toISOString().slice(0,10)}T${hh}:${mm}`;
 
     try {
-      // guardar en business
       await setDoc(bookingRef, {
         userId,
         serviceId,
@@ -139,7 +132,6 @@ export default function BookingScreen({ route, navigation }) {
         date: dateISO,
         createdAt: new Date().toISOString()
       });
-      // guardar en users
       await setDoc(doc(db, 'users', userId, 'reservations', bookingId), {
         companyId,
         serviceId,
@@ -156,16 +148,20 @@ export default function BookingScreen({ route, navigation }) {
         },
         createdAt: new Date().toISOString()
       });
-      navigation.goBack();
+      Alert.alert('Reserva confirmada', 'Tu reserva ha sido registrada correctamente.', [
+        { text: 'OK', onPress: () => navigation.goBack() }
+      ]);
     } catch (e) {
       console.error('Booking error:', e);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{serviceName}</Text>
-      <Text style={styles.subtitle}>{duration} min • € {price}</Text>
+    <ScrollView style={styles.container}>
+      <View style={styles.headerBox}>
+        <Text style={styles.headerTitle}>{serviceName}</Text>
+        <Text style={styles.headerSubtitle}>{duration} minutos • {price} €</Text>
+      </View>
 
       <FlatList
         data={days}
@@ -179,21 +175,18 @@ export default function BookingScreen({ route, navigation }) {
           const openInfo = schedule[dn] && !schedule[dn].closed;
           return (
             <TouchableOpacity
-              style={[
-                styles.dayItem,
-                { width: dayWidth },
-                sel && styles.daySelected,
-                !openInfo && styles.dayClosed
-              ]}
+              style={[styles.dayItem, sel && styles.daySelected, !openInfo && styles.dayClosed]}
               disabled={!openInfo}
               onPress={() => setSelectedDayIdx(index)}
             >
-              <Text style={[styles.dayName, sel && styles.dayNameSel]}>{dn}</Text>
+              <Text style={[styles.dayName, sel && styles.dayNameSel]}>{dn.slice(0,3)}</Text>
               <Text style={[styles.dayNum, sel && styles.dayNumSel]}>{item.getDate()}</Text>
             </TouchableOpacity>
           );
         }}
       />
+
+      <View style={styles.divider} />
 
       <FlatList
         data={slots}
@@ -202,18 +195,14 @@ export default function BookingScreen({ route, navigation }) {
         showsHorizontalScrollIndicator={false}
         style={styles.slotsList}
         renderItem={({ item, index }) => {
-          const sel = selectedSlots.includes(item.time);
+          const isInSelectedRange = selectedSlots.includes(item.time);
           return (
             <TouchableOpacity
-              style={[
-                styles.slotItem,
-                item.occupied && styles.slotOccupied,
-                sel && styles.slotSelected
-              ]}
+              style={[styles.slotItem, item.occupied && styles.slotOccupied, isInSelectedRange && styles.slotSelected]}
               disabled={item.occupied}
               onPress={() => onSelect(index)}
             >
-              <Text style={[styles.slotText, sel && styles.slotTextSel]}>
+              <Text style={[styles.slotText, isInSelectedRange && styles.slotTextSel, item.occupied && styles.slotTextOccupied]}>
                 {item.label}
               </Text>
             </TouchableOpacity>
@@ -222,44 +211,78 @@ export default function BookingScreen({ route, navigation }) {
       />
 
       {selectedSlots.length > 0 && (
-        <TouchableOpacity style={styles.bookBtn} onPress={confirmBooking}>
-          <Text style={styles.bookBtnText}>Reservar</Text>
-        </TouchableOpacity>
+        <View style={styles.summaryCard}>
+          <View>
+            <Text style={styles.serviceName}>{serviceName}</Text>
+            <Text style={styles.serviceDetail}>
+              {slots.find(s => s.time === selectedSlots[0])?.label} – {
+                (() => {
+                  const end = selectedSlots[0] + duration;
+                  return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
+                })()
+              }
+            </Text>
+            <Text style={styles.serviceDetail}>Empleado: Cualquiera</Text>
+          </View>
+          <TouchableOpacity style={styles.changeBtn} onPress={confirmBooking}>
+            <Text style={styles.changeText}>Confirmar reserva</Text>
+          </TouchableOpacity>
+        </View>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container:     { flex:1, backgroundColor:colors.background, padding:16 },
-  center:        { flex:1,justifyContent:'center',alignItems:'center' },
-  title:         { ...typography.h2, textAlign:'center' },
-  subtitle:      { ...typography.body, textAlign:'center', marginBottom:12 },
+  center:        { flex:1, justifyContent:'center', alignItems:'center' },
+  headerBox:     {
+    backgroundColor: colors.primary,
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 20,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2, shadowRadius: 6, elevation: 6
+  },
+  headerTitle:   { ...typography.h1, color: colors.buttonText, textAlign: 'center' },
+  headerSubtitle:{ ...typography.body, color: colors.buttonText, textAlign: 'center', marginTop: 4 },
   daysList:      { marginVertical:8 },
   dayItem:       {
-                  alignItems:'center', padding:8, marginHorizontal:4,
-                  borderRadius:8, backgroundColor:colors.white,
-                  borderWidth:1, borderColor:colors.primary
-                },
-  daySelected:   { backgroundColor:colors.primary },
-  dayClosed:     { opacity:0.4 },
-  dayName:       { ...typography.body, color:colors.textPrimary },
-  dayNameSel:    { color:colors.buttonText },
-  dayNum:        { ...typography.h2, marginTop:4 },
-  dayNumSel:     { color:colors.buttonText },
-  slotsList:     { marginVertical:16 },
+    alignItems:'center', padding:10, marginHorizontal:4,
+    borderRadius:12, backgroundColor:colors.white,
+    borderWidth:2, borderColor:colors.primary,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1, shadowRadius: 4, elevation: 4
+  },
+  daySelected:   { backgroundColor: colors.primary },
+  dayClosed:     { opacity: 0.3 },
+  dayName:       { ...typography.body, color: colors.textPrimary },
+  dayNameSel:    { color: colors.buttonText },
+  dayNum:        { ...typography.h2, marginTop: 4 },
+  dayNumSel:     { color: colors.buttonText },
+  divider:       { height: 1, backgroundColor: '#ccc', marginVertical: 12 },
+  slotsList:     { marginVertical: 8 },
   slotItem:      {
-                  padding:10, marginHorizontal:4, borderRadius:8,
-                  borderWidth:1, borderColor:colors.primary,
-                  backgroundColor:colors.white
-                },
-  slotOccupied:  { backgroundColor:'#f0f0f0', borderColor:'#ccc' },
-  slotSelected:  { backgroundColor:colors.primary },
-  slotText:      { ...typography.body, color:colors.textPrimary },
-  slotTextSel:   { color:colors.buttonText },
-  bookBtn:       {
-                  backgroundColor:colors.primary, padding:14,
-                  borderRadius:25, alignItems:'center', marginTop:20
-                },
-  bookBtnText:   { ...typography.body, color:colors.buttonText }
+    paddingVertical: 12, paddingHorizontal: 20, borderRadius: 25,
+    backgroundColor: '#e6f0ff', marginHorizontal: 4
+  },
+  slotOccupied:  { backgroundColor: '#f2f2f2', borderWidth: 1, borderColor: '#ccc' },
+  slotSelected:  { backgroundColor: colors.primary },
+  slotText:      { ...typography.body },
+  slotTextSel:   { color: colors.buttonText },
+  slotTextOccupied: { color: '#999' },
+  summaryCard: {
+    backgroundColor: colors.white, borderRadius: 12, padding: 16,
+    borderWidth: 1, borderColor: colors.primary, marginTop: 20
+  },
+  serviceName: { ...typography.h2, marginBottom: 4 },
+  serviceDetail: { ...typography.body },
+  changeBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    borderRadius: 25,
+    alignItems: 'center',
+    marginTop: 16
+  },
+  changeText: { ...typography.body, color: colors.buttonText }
 });

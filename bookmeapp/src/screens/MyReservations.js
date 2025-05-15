@@ -4,20 +4,20 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
-  FlatList,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   Alert,
-  TextInput
+  Modal,
+  ScrollView
 } from 'react-native';
+import { Calendar } from 'react-native-calendars';
 import { auth, db } from '../firebase/config';
 import {
   collection,
   getDocs,
   deleteDoc,
-  doc,
-  updateDoc
+  doc
 } from 'firebase/firestore';
 import colors from '../theme/colors';
 import typography from '../theme/typography';
@@ -28,36 +28,30 @@ export default function MyReservations() {
   const now = new Date();
 
   const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState([]);    // próximas
-  const [past, setPast] = useState([]);        // finalizadas
+  const [reservations, setReservations] = useState([]);
+  const [markedDates, setMarkedDates] = useState({});
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [dailyReservations, setDailyReservations] = useState([]);
+  const [selectedReservation, setSelectedReservation] = useState(null);
 
-  const [ratings, setRatings] = useState({});
-  const [comments, setComments] = useState({});
-
-  const [tab, setTab] = useState('activas');   // 'activas' | 'finalizadas'
-
-  const load = useCallback(async () => {
+  const loadReservations = useCallback(async () => {
     setLoading(true);
     try {
       const snap = await getDocs(reservationsRef);
       const all = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
-        // filtrar sólo aquellos con slot definido
-        .filter(r => r.slot && r.slot.date && r.slot.from);
-      // ordenar por fecha+hora en JS
-      all.sort((a, b) => {
-        const da = new Date(`${a.slot.date}T${a.slot.from}`);
-        const db_ = new Date(`${b.slot.date}T${b.slot.from}`);
-        return da - db_;
-      });
-      const a = [], p = [];
+        .filter(r => r.slot?.date && r.slot?.from);
+
+      const marks = {};
       all.forEach(res => {
-        const dt = new Date(`${res.slot.date}T${res.slot.from}`);
-        if (dt > now) a.push(res);
-        else p.push(res);
+        marks[res.slot.date] = {
+          marked: true,
+          dotColor: colors.primary
+        };
       });
-      setActive(a);
-      setPast(p);
+
+      setMarkedDates(marks);
+      setReservations(all);
     } catch (e) {
       console.error(e);
       Alert.alert('Error', 'No se pudieron cargar las reservas.');
@@ -66,200 +60,224 @@ export default function MyReservations() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    loadReservations();
+  }, [loadReservations]);
 
-  const handleCancel = res => {
+  const handleDayPress = (day) => {
+    setSelectedDate(day.dateString);
+    const resOfDay = reservations.filter(
+      r => r.slot?.date === day.dateString
+    );
+    setDailyReservations(resOfDay);
+  };
+
+  const handleCancel = async (res) => {
     Alert.alert(
       'Cancelar reserva',
       `¿Eliminar ${res.serviceName} el ${res.slot.date} a las ${res.slot.from}?`,
       [
         { text: 'No', style: 'cancel' },
-        { text: 'Sí', onPress: async () => {
+        {
+          text: 'Sí', onPress: async () => {
             try {
               await deleteDoc(doc(reservationsRef, res.id));
-              load();
+              await loadReservations();
+              setDailyReservations(prev => prev.filter(r => r.id !== res.id));
+              Alert.alert('Cancelada', 'La reserva fue cancelada.');
             } catch (e) {
               console.error(e);
               Alert.alert('Error', 'No se pudo cancelar.');
             }
-          }}
+          }
+        }
       ]
     );
   };
 
-  const saveRating = async res => {
-    const rating = ratings[res.id] || 0;
-    const comment = comments[res.id] || '';
-    if (rating < 1 || rating > 5) {
-      Alert.alert('Error', 'Selecciona una valoración de 1 a 5 estrellas.');
-      return;
-    }
-    try {
-      const reviewRef = doc(
-        db,
-        'business',
-        res.companyId,
-        'services',
-        res.serviceId,
-        'reviews',
-        res.id
-      );
-      await updateDoc(reviewRef, { rating, comment }, { merge: true });
-      Alert.alert('¡Gracias!', 'Valoración registrada.');
-    } catch (e) {
-      console.error(e);
-      Alert.alert('Error', 'No se pudo guardar valoración.');
-    }
-  };
-
-  const renderReservation = ({ item }) => (
-    <View style={styles.card}>
-      <View style={styles.info}>
-        <Text style={styles.serviceName}>{item.serviceName}</Text>
-        <Text style={styles.slotText}>
-          📅 {item.slot?.date || '—'}
-        </Text>
-        <Text style={styles.slotText}>
-          ⏰ {item.slot?.from || '—'} – {item.slot?.to || '—'}
-        </Text>
-      </View>
-      {tab === 'activas' ? (
-        <TouchableOpacity
-          style={styles.cancelBtn}
-          onPress={() => handleCancel(item)}
-        >
-          <Text style={styles.cancelText}>Cancelar</Text>
-        </TouchableOpacity>
-      ) : (
-        <>
-          <View style={styles.ratingRow}>
-            {[1,2,3,4,5].map(n => (
-              <TouchableOpacity
-                key={n}
-                onPress={() => setRatings(r => ({ ...r, [item.id]: n }))}
-              >
-                <Text style={[
-                  styles.star,
-                  ratings[item.id] >= n && styles.starSelected
-                ]}>★</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <TextInput
-            style={styles.commentInput}
-            placeholder="Comentario (opcional)"
-            value={comments[item.id] || ''}
-            onChangeText={t => setComments(c => ({ ...c, [item.id]: t }))}
-          />
-          <TouchableOpacity
-            style={styles.saveRatingBtn}
-            onPress={() => saveRating(item)}
-          >
-            <Text style={styles.saveRatingText}>Guardar Valoración</Text>
-          </TouchableOpacity>
-        </>
-      )}
-    </View>
-  );
-
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary}/>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
-  const data = tab === 'activas' ? active : past;
-
   return (
     <View style={styles.container}>
-      {/* Pestañas */}
-      <View style={styles.tabRow}>
-        <TouchableOpacity
-          style={[styles.tabBtn, tab === 'activas' && styles.tabActive]}
-          onPress={() => setTab('activas')}
-        >
-          <Text style={[styles.tabText, tab === 'activas' && styles.tabTextActive]}>
-            Reservas Activas
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabBtn, tab === 'finalizadas' && styles.tabActive]}
-          onPress={() => setTab('finalizadas')}
-        >
-          <Text style={[styles.tabText, tab === 'finalizadas' && styles.tabTextActive]}>
-            Reservas Finalizadas
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <Calendar
+        onDayPress={handleDayPress}
+        markedDates={{
+          ...markedDates,
+          ...(selectedDate && {
+            [selectedDate]: {
+              ...markedDates[selectedDate],
+              selected: true,
+              selectedColor: colors.primary
+            }
+          })
+        }}
+        theme={{
+          todayTextColor: colors.primary,
+          selectedDayBackgroundColor: colors.primary,
+        }}
+      />
 
-      {data.length === 0 ? (
-        <Text style={styles.emptyText}>
-          {tab === 'activas'
-            ? 'No tienes reservas activas.'
-            : 'No hay reservas finalizadas.'}
-        </Text>
-      ) : (
-        <FlatList
-          data={data}
-          keyExtractor={item => item.id}
-          renderItem={renderReservation}
-          showsVerticalScrollIndicator={false}
-        />
+      {selectedDate && (
+        <View style={styles.reservationsContainer}>
+          <Text style={styles.sectionTitle}>
+            Reservas para {selectedDate}
+          </Text>
+          {dailyReservations.length === 0 ? (
+            <Text style={styles.emptyText}>No tienes reservas este día.</Text>
+          ) : (
+            <ScrollView style={{ maxHeight: 300 }}>
+              {dailyReservations.map(res => (
+                <TouchableOpacity
+                  key={res.id}
+                  style={styles.card}
+                  onPress={() => setSelectedReservation(res)}
+                >
+                  <Text style={styles.serviceName}>{res.serviceName}</Text>
+                  <Text style={styles.slotText}>⏰ {res.slot.from} - {res.slot.to}</Text>
+                  <Text style={styles.slotText}>📍 {res.location || 'Ubicación no especificada'}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </View>
       )}
+
+      <Modal
+        visible={!!selectedReservation}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedReservation(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Detalles de la Reserva</Text>
+            {selectedReservation && (
+              <>
+                <Text style={styles.modalText}>
+                  <Text style={styles.bold}>Servicio:</Text> {selectedReservation.serviceName}
+                </Text>
+                <Text style={styles.modalText}>
+                  <Text style={styles.bold}>Fecha:</Text> {selectedReservation.slot.date}
+                </Text>
+                <Text style={styles.modalText}>
+                  <Text style={styles.bold}>Hora:</Text> {selectedReservation.slot.from} - {selectedReservation.slot.to}
+                </Text>
+                <Text style={styles.modalText}>
+                  <Text style={styles.bold}>Empresa:</Text> {selectedReservation.companyName || '—'}
+                </Text>
+                <Text style={styles.modalText}>
+                  <Text style={styles.bold}>Ubicación:</Text> {selectedReservation.location || '—'}
+                </Text>
+                <TouchableOpacity
+                  style={styles.cancelBtn}
+                  onPress={() => handleCancel(selectedReservation)}
+                >
+                  <Text style={styles.cancelText}>Cancelar Reserva</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.closeBtn}
+                  onPress={() => setSelectedReservation(null)}
+                >
+                  <Text style={styles.closeText}>Cerrar</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container:       { flex:1, backgroundColor:colors.background, padding:20 },
-  center:          { flex:1, justifyContent:'center', alignItems:'center', backgroundColor:colors.background },
-  tabRow:          { flexDirection:'row', marginBottom:20 },
-  tabBtn:          {
-                     flex:1,
-                     paddingVertical:10,
-                     borderBottomWidth:2,
-                     borderColor:'transparent',
-                     alignItems:'center'
-                   },
-  tabActive:       { borderColor:colors.primary },
-  tabText:         { ...typography.body, color:colors.textSecondary },
-  tabTextActive:   { color:colors.primary, fontWeight:'600' },
-  emptyText:       { textAlign:'center', color:colors.textSecondary, marginTop:40 },
-
-  card:            {
-                     backgroundColor:colors.white,
-                     padding:16,
-                     borderRadius:8,
-                     marginBottom:12,
-                     borderWidth:1,
-                     borderColor:colors.primary
-                   },
-  info:            {},
-  serviceName:     { ...typography.h2 },
-  slotText:        { ...typography.body, marginVertical:2 },
-
-  cancelBtn:       { alignSelf:'flex-end', marginTop:8 },
-  cancelText:      { color:'red', ...typography.body, fontWeight:'600' },
-
-  ratingRow:       { flexDirection:'row', marginTop:8 },
-  star:            { fontSize:24, color:'#ccc', marginHorizontal:2 },
-  starSelected:    { color:'#f5a623' },
-  commentInput:    {
-                     backgroundColor:colors.white,
-                     padding:8,
-                     borderRadius:6,
-                     borderWidth:1,
-                     borderColor:colors.primary,
-                     marginTop:8
-                   },
-  saveRatingBtn:   {
-                     backgroundColor:colors.primary,
-                     padding:10,
-                     borderRadius:20,
-                     alignItems:'center',
-                     marginTop:8
-                   },
-  saveRatingText:  { ...typography.body, color:colors.buttonText }
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+    padding: 16
+  },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background
+  },
+  reservationsContainer: {
+    marginTop: 20
+  },
+  sectionTitle: {
+    ...typography.h2,
+    marginBottom: 8
+  },
+  emptyText: {
+    ...typography.body,
+    textAlign: 'center',
+    color: colors.textSecondary,
+    marginTop: 20
+  },
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: 8,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.primary
+  },
+  serviceName: {
+    ...typography.h3,
+    marginBottom: 4
+  },
+  slotText: {
+    ...typography.body
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: '#00000088',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  modalContainer: {
+    backgroundColor: colors.white,
+    padding: 20,
+    borderRadius: 12,
+    width: '85%'
+  },
+  modalTitle: {
+    ...typography.h2,
+    marginBottom: 12
+  },
+  modalText: {
+    ...typography.body,
+    marginBottom: 6
+  },
+  bold: {
+    fontWeight: 'bold'
+  },
+  cancelBtn: {
+    marginTop: 12,
+    padding: 10,
+    backgroundColor: 'red',
+    borderRadius: 6,
+    alignItems: 'center'
+  },
+  cancelText: {
+    color: '#fff',
+    fontWeight: 'bold'
+  },
+  closeBtn: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+    alignItems: 'center'
+  },
+  closeText: {
+    color: colors.buttonText,
+    fontWeight: '600'
+  }
 });
